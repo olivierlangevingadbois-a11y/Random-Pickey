@@ -1,0 +1,7 @@
+# Class lists contain student names: keep them out of this public repo.
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.ods
+node_modules/

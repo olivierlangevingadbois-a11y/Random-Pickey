@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Course de billes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: control panel on the left, the marble run fills the rest; stacks (track first) on phones. */
+:root {
+  --bg: #EDF0F6; --surface: #FFFFFF; --ink: #16203A; --muted: #59647F; --line: #D5DBE8;
+  --accent: #1F4FA3; --accent-ink: #FFFFFF; --gold: #C98A0C;
+  --track: #DFE6F2; --track-line: #C6D1E5; --wood: #B8763A; --wood-edge: #855024;
+  --peg: #46557A; --tree: #2F6B4C; --spin: #2D7A58; --bump: #C7372C; --water: #7FA2D6;
+  --f-display: "Bungee", "Arial Black", Impact, sans-serif;
+  --f-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1420; --surface: #161F31; --ink: #E6EBF5; --muted: #98A3BC; --line: #28334A;
+    --accent: #88AAF2; --accent-ink: #0E1420; --gold: #F0B83A;
+    --track: #121B2B; --track-line: #1E2A41; --wood: #C2864C; --wood-edge: #7A4A21;
+    --peg: #8693B2; --tree: #5FAE82; --spin: #4FB487; --bump: #E4574C; --water: #3F5F93;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1420; --surface: #161F31; --ink: #E6EBF5; --muted: #98A3BC; --line: #28334A;
+  --accent: #88AAF2; --accent-ink: #0E1420; --gold: #F0B83A;
+  --track: #121B2B; --track-line: #1E2A41; --wood: #C2864C; --wood-edge: #7A4A21;
+  --peg: #8693B2; --tree: #5FAE82; --spin: #4FB487; --bump: #E4574C; --water: #3F5F93;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 var(--f-body); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.top {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px;
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.top h1 { margin: 0; font: 400 22px/1.1 var(--f-display); letter-spacing: .01em; }
+.top h1 span { color: var(--accent); }
+.top p { margin: 0; color: var(--muted); font-size: 14px; }
+
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; }
+.panel {
+  overflow: auto; background: var(--surface); border-left: 1px solid var(--line);
+  padding-block: 16px 24px;
+  padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 20px;
+}
+.block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lbl { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.spread { justify-content: space-between; }
+select, input[type="text"], textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+}
+textarea { min-height: 110px; resize: vertical; font-size: 14px; }
+.btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 10px;
+  padding: 7px 12px; font-weight: 700; font-size: 14px; cursor: pointer; line-height: 1.2;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--accent); padding-inline: 6px; }
+.btn.danger { color: var(--bump); }
+.btn.danger.armed { background: var(--bump); color: var(--surface); border-color: transparent; }
+.file { position: relative; overflow: hidden; display: inline-flex; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.status { font-size: 14px; color: var(--muted); margin: 0; }
+.status.err { color: var(--bump); }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+details summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--accent); }
+details[open] summary { margin-bottom: 8px; }
+details .block { gap: 8px; }
+
+.count { font-variant-numeric: tabular-nums; font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  border-radius: 999px; padding: 4px 10px 4px 7px; font-size: 14px;
+}
+.chip .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.chip[aria-pressed="true"] {
+  color: var(--ink); border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+}
+.chip[aria-pressed="true"] .dot { background: var(--accent); border-color: var(--accent); }
+.chip.picked { text-decoration: line-through; text-decoration-color: var(--gold); text-decoration-thickness: 2px; }
+.picked-list { margin: 0; padding-left: 22px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.picked-list span { color: var(--muted); }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check input { margin-top: 3px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+
+/* Stage */
+.stage { position: relative; min-height: 0; min-width: 0; background: var(--track); overflow: hidden; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { pointer-events: none; z-index: 5; }
+.hud { position: absolute; z-index: 3; display: flex; gap: 8px; pointer-events: none; }
+.hud > * { pointer-events: auto; }
+.hud-tl { top: 12px; left: calc(12px + env(safe-area-inset-left, 0px)); }
+.hud-tr { top: 12px; right: 12px; }
+.hud-b {
+  left: calc(12px + env(safe-area-inset-left, 0px)); right: 12px; bottom: 12px;
+  align-items: center;
+}
+.pill {
+  border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 14px; cursor: pointer;
+  font-variant-numeric: tabular-nums; min-width: 44px;
+}
+.pill[aria-pressed="false"] { color: var(--muted); }
+.ticker {
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line);
+  border-radius: 999px; padding: 10px 16px; font-weight: 700;
+}
+.go {
+  flex: none; border: 0; cursor: pointer; border-radius: 999px; padding: 13px 22px;
+  background: var(--accent); color: var(--accent-ink);
+  font: 400 17px/1 var(--f-display); letter-spacing: .02em;
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--accent) 55%, #000);
+  transition: transform .08s, box-shadow .08s;
+}
+.go:active { transform: translateY(3px); box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 55%, #000); }
+.rank {
+  list-style: none; margin: 0; padding: 8px 12px; min-width: 170px; max-width: 46vw;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line);
+  border-radius: 12px; font-size: 14px; display: flex; flex-direction: column; gap: 3px;
+}
+.rank li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rank .pos { width: 1.7em; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+.rank .sw { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.rank .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank li.done .nm { font-weight: 700; }
+.countdown {
+  position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none;
+  font: 400 clamp(80px, 18vw, 200px)/1 var(--f-display); color: var(--accent);
+  text-shadow: 0 6px 0 color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.countdown.pop { animation: pop .6s ease-out; }
+@keyframes pop { from { transform: scale(1.6); opacity: 0; } 30% { opacity: 1; } to { transform: scale(1); } }
+
+.win {
+  position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, var(--track) 60%, transparent); backdrop-filter: blur(3px);
+}
+.win-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
+  padding: 24px 28px; text-align: center; width: min(100%, 480px);
+  box-shadow: 0 24px 60px rgb(0 0 0 / .28); display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+.win-card .lbl { color: var(--gold); }
+.ball { width: 76px; height: 76px; border-radius: 50%; animation: bounce 1.1s cubic-bezier(.3,.7,.4,1) both; }
+@keyframes bounce { 0% { transform: translateY(-60px) scale(.6); } 45% { transform: translateY(0) scale(1.08, .92); } 65% { transform: translateY(-14px); } 100% { transform: none; } }
+.win h2 { margin: 0; font: 400 clamp(34px, 7vw, 64px)/1.05 var(--f-display); text-wrap: balance; overflow-wrap: break-word; }
+.win .full { margin: 0; color: var(--muted); font-size: 18px; }
+.podium { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; font-size: 15px; color: var(--muted); }
+.podium b { color: var(--ink); }
+.win .row { justify-content: center; margin-top: 6px; }
+
+@media (max-width: 860px) {
+  .app { height: auto; }
+  main { grid-template-columns: 1fr; }
+  .stage { height: 70svh; min-height: 420px; }
+  .hud-tr { right: calc(12px + env(safe-area-inset-right, 0px)); }
+  .hud-b { right: calc(12px + env(safe-area-inset-right, 0px)); }
+  .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  .go { padding: 12px 16px; font-size: 15px; }
+  .rank { min-width: 0; font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ball, .countdown.pop { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Course <span>de billes</span></h1>
+    <p>La première bille à franchir l’arrivée est pigée.</p>
+  </header>
+  <main>
+    <section class="stage" id="stage" aria-label="Piste de la course">
+      <canvas id="track"></canvas>
+      <canvas id="fx"></canvas>
+      <div class="hud hud-tl"><ol class="rank" id="rank" aria-live="off"></ol></div>
+      <div class="hud hud-tr">
+        <button class="pill" id="speed" type="button" title="Vitesse de la course">1×</button>
+        <button class="pill" id="sound" type="button" aria-pressed="true" title="Effets sonores">Son</button>
+        <button class="pill" id="fs" type="button" title="Plein écran">⛶</button>
+      </div>
+      <div class="countdown" id="countdown" hidden></div>
+      <div class="hud hud-b">
+        <div class="ticker" id="ticker" role="status"></div>
+        <button class="go" id="go" type="button">Lancer la course</button>
+      </div>
+      <div class="win" id="win" hidden>
+        <div class="win-card" role="dialog" aria-labelledby="winName">
+          <span class="lbl">Et la bille gagnante est…</span>
+          <div class="ball" id="winBall"></div>
+          <h2 id="winName"></h2>
+          <p class="full" id="winFull"></p>
+          <ol class="podium" id="podium"></ol>
+          <div class="row">
+            <button class="go" id="again" type="button">Nouvelle course</button>
+            <button class="btn" id="closeWin" type="button">Voir la piste</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="block">
+        <label class="lbl" for="group">Groupe</label>
+        <select id="group"></select>
+        <div class="row">
+          <span class="btn file">Importer un fichier Excel<input id="file" type="file" accept=".xlsx,.xlsm,.xls,.csv,.ods" aria-label="Importer un fichier Excel"></span>
+        </div>
+        <p class="status" id="status"></p>
+        <p class="note" id="sampleNote">Ceci est un groupe d’exemple. Importe ton classeur : chaque onglet devient un groupe (colonnes « Nom » et « Prénom »).</p>
+      </div>
+
+      <div class="block">
+        <div class="row spread">
+          <span class="lbl">Élèves dans la course</span>
+          <span class="count" id="count"></span>
+        </div>
+        <div class="row">
+          <button class="btn quiet" id="all" type="button">Tout cocher</button>
+          <button class="btn quiet" id="none" type="button">Tout décocher</button>
+        </div>
+        <div class="chips" id="chips"></div>
+      </div>
+
+      <div class="block">
+        <label class="check"><input type="checkbox" id="removeWinner"> Retirer l’élève pigé·e des prochaines courses</label>
+      </div>
+
+      <div class="block" id="pickedBlock" hidden>
+        <div class="row spread">
+          <span class="lbl">Déjà pigé·e·s</span>
+          <button class="btn quiet" id="resetPicked" type="button">Remettre tout le monde</button>
+        </div>
+        <ol class="picked-list" id="picked"></ol>
+      </div>
+
+      <details>
+        <summary>Ajouter un groupe en collant une liste</summary>
+        <div class="block">
+          <label class="lbl" for="pasteName">Nom du groupe</label>
+          <input type="text" id="pasteName" placeholder="Ex. HIS4G4-49">
+          <label class="lbl" for="paste">Un élève par ligne</label>
+          <textarea id="paste" placeholder="Tremblay, Léa&#10;Gagnon, Thomas&#10;ou simplement : Léa T."></textarea>
+          <div class="row"><button class="btn" id="pasteAdd" type="button">Ajouter le groupe</button></div>
+        </div>
+      </details>
+
+      <div class="block">
+        <div class="row"><button class="btn danger" id="delGroup" type="button">Supprimer ce groupe</button></div>
+        <p class="note">Les listes restent dans ce navigateur seulement. Rien n’est envoyé en ligne.</p>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const { Engine, Bodies, Body, Composite, Events } = Matter;
+  const W = 900, R = 12, MAXN = 100, STEP = 1000 / 60, VMAX = 14;
+  const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+
+  // ---------- Storage ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('billes:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('billes:' + k, JSON.stringify(v)); } catch {} },
+  };
+  const SAMPLE = {
+    name: 'Exemple — Nouvelle-France', sample: true,
+    students: [['Champlain', 'Samuel'], ['Mance', 'Jeanne'], ['Talon', 'Jean'], ['Rollet', 'Marie'], ['Frontenac', 'Louis'],
+      ['Tekakwitha', 'Kateri'], ['Le Moyne', 'Pierre'], ['Verchères', 'Madeleine'], ['Montcalm', 'Louis-Joseph'],
+      ['Papineau', 'Louis-Joseph'], ['Bourgeoys', 'Marguerite'], ['Hébert', 'Louis'], ['Cartier', 'Jacques'],
+      ['d’Youville', 'Marguerite'], ['Laurier', 'Wilfrid'], ['Lévis', 'François']].map(([last, first]) => ({ first, last })),
+  };
+  let groups = store.get('groups', null);
+  if (!Array.isArray(groups) || !groups.length) groups = [SAMPLE];
+  let current = store.get('current', groups[0].name);
+  if (!groups.some(g => g.name === current)) current = groups[0].name;
+  let excluded = store.get('excluded', {});
+  let picked = store.get('picked', {});
+  const opts = Object.assign({ removeWinner: true, speed: 1, sound: true }, store.get('opts', {}));
+  const save = () => { store.set('groups', groups); store.set('current', current); store.set('excluded', excluded); store.set('picked', picked); store.set('opts', opts); };
+
+  const keyOf = s => s.last + '|' + s.first;
+  const grp = (name = current) => groups.find(g => g.name === name);
+  const isIn = (s, g = current) => !(excluded[g] || []).includes(keyOf(s));
+  function setIn(s, on, g = current) {
+    const set = new Set(excluded[g] || []);
+    on ? set.delete(keyOf(s)) : set.add(keyOf(s));
+    excluded[g] = [...set];
+  }
+  function labels(list) {
+    const n = {};
+    list.forEach(s => n[s.first] = (n[s.first] || 0) + 1);
+    return list.map(s => n[s.first] > 1 && s.last ? `${s.first} ${s.last[0]}.` : s.first);
+  }
+  const fullName = s => `${s.first} ${s.last}`.trim();
+  const rand = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  const pickOne = a => a[Math.floor(rand() * a.length)];
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  // ---------- Panel ----------
+  function renderPanel() {
+    const sel = $('#group');
+    sel.innerHTML = '';
+    for (const g of groups) {
+      const o = document.createElement('option');
+      o.value = g.name; o.textContent = `${g.name} (${g.students.length})`;
+      sel.append(o);
+    }
+    sel.value = current;
+    const g = grp();
+    const labs = labels(g.students);
+    const pk = new Set((picked[current] || []).map(p => p.key));
+    const box = $('#chips');
+    box.innerHTML = '';
+    g.students.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (pk.has(keyOf(s)) ? ' picked' : '');
+      b.setAttribute('aria-pressed', isIn(s));
+      b.title = fullName(s);
+      b.innerHTML = '<span class="dot"></span>';
+      b.append(labs[i]);
+      b.onclick = () => { setIn(s, !isIn(s)); save(); renderPanel(); preview(); };
+      box.append(b);
+    });
+    $('#count').textContent = `${g.students.filter(s => isIn(s)).length} / ${g.students.length}`;
+    $('#sampleNote').hidden = !g.sample;
+    $('#removeWinner').checked = opts.removeWinner;
+
+    const list = picked[current] || [];
+    $('#pickedBlock').hidden = !list.length;
+    const ol = $('#picked');
+    ol.innerHTML = '';
+    for (const p of list) {
+      const s = g.students.find(x => keyOf(x) === p.key);
+      if (!s) continue;
+      const li = document.createElement('li');
+      const t = new Date(p.at);
+      li.append(fullName(s) + ' ');
+      const sp = document.createElement('span');
+      sp.textContent = `· ${t.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}, ${t.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}`;
+      li.append(sp);
+      ol.append(li);
+    }
+    $('#speed').textContent = opts.speed + '×';
+    $('#sound').setAttribute('aria-pressed', opts.sound);
+  }
+  function status(msg, err = false) { const el = $('#status'); el.textContent = msg; el.classList.toggle('err', err); }
+
+  $('#group').onchange = e => { current = e.target.value; save(); renderPanel(); preview(); };
+  $('#all').onclick = () => { excluded[current] = []; save(); renderPanel(); preview(); };
+  $('#none').onclick = () => { excluded[current] = grp().students.map(keyOf); save(); renderPanel(); preview(); };
+  $('#removeWinner').onchange = e => { opts.removeWinner = e.target.checked; save(); };
+  $('#resetPicked').onclick = () => {
+    for (const p of picked[current] || []) { const s = grp().students.find(x => keyOf(x) === p.key); if (s) setIn(s, true); }
+    picked[current] = []; save(); renderPanel(); preview();
+  };
+  let delTimer = 0;
+  $('#delGroup').onclick = e => {
+    const b = e.currentTarget;
+    if (!b.classList.contains('armed')) {
+      b.classList.add('armed'); b.textContent = `Confirmer : supprimer « ${current} »`;
+      clearTimeout(delTimer);
+      delTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Supprimer ce groupe'; }, 4000);
+      return;
+    }
+    clearTimeout(delTimer);
+    b.classList.remove('armed'); b.textContent = 'Supprimer ce groupe';
+    groups = groups.filter(g => g.name !== current);
+    delete excluded[current]; delete picked[current];
+    if (!groups.length) groups = [SAMPLE];
+    current = groups[0].name;
+    save(); renderPanel(); preview(); status('Groupe supprimé.');
+  };
+
+  // ---------- Import ----------
+  const norm = s => String(s).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  function splitName(line) {
+    const parts = line.split(/\t|,|;/).map(x => x.trim()).filter(Boolean);
+    if (parts.length >= 2) return { last: parts[0], first: parts[1] };
+    return { first: line.trim(), last: '' };
+  }
+  function parseRows(rows) {
+    let hr = -1, cF = -1, cL = -1;
+    for (let i = 0; i < Math.min(rows.length, 40) && hr < 0; i++) {
+      const r = rows[i].map(norm);
+      const f = r.findIndex(c => ['prenom', 'prenoms', 'first name', 'firstname', 'first'].includes(c));
+      if (f >= 0) { hr = i; cF = f; cL = r.findIndex(c => ['nom', 'nom de famille', 'last name', 'lastname', 'last', 'surname'].includes(c)); }
+    }
+    const out = [];
+    if (hr >= 0) {
+      for (const r of rows.slice(hr + 1)) {
+        const first = String(r[cF] ?? '').trim(), last = cL >= 0 ? String(r[cL] ?? '').trim() : '';
+        // Skip summary rows like "Moyenne de classe" that sit in the Prénom column with no Nom
+        if (!first || (cL >= 0 && !last) || /^(moyenne|total|average)/i.test(norm(first))) continue;
+        out.push({ first, last });
+      }
+    }
+    return out;
+  }
+  function loadXLSX() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL; s.onload = res; s.onerror = () => rej(new Error('lib'));
+      document.head.append(s);
+    });
+  }
+  function mergeGroups(found) {
+    groups = groups.filter(g => !g.sample && !found.some(f => f.name === g.name)).concat(found);
+    current = found[0].name;
+    save(); renderPanel(); preview();
+  }
+  $('#file').onchange = async e => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    status('Lecture du fichier…');
+    try {
+      await loadXLSX();
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const found = [];
+      for (const sn of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
+        const students = parseRows(rows);
+        if (students.length) found.push({ name: sn.trim(), students });
+      }
+      if (!found.length) { status('Aucun élève trouvé. Chaque onglet doit avoir une colonne « Prénom » (et idéalement « Nom »).', true); return; }
+      mergeGroups(found);
+      const total = found.reduce((n, g) => n + g.students.length, 0);
+      status(`${found.length} groupe${found.length > 1 ? 's' : ''} importé${found.length > 1 ? 's' : ''}, ${total} élèves.`);
+    } catch (err) {
+      status(err.message === 'lib' ? 'Le lecteur Excel n’a pas pu se charger. Vérifie la connexion Internet.' : 'Ce fichier n’a pas pu être lu. Essaie un .xlsx, .xlsm ou .csv.', true);
+    }
+  };
+  $('#pasteAdd').onclick = () => {
+    const students = $('#paste').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(splitName);
+    if (students.length < 2) { status('Colle au moins 2 noms, un par ligne.', true); return; }
+    const name = $('#pasteName').value.trim() || `Groupe ${groups.filter(g => !g.sample).length + 1}`;
+    mergeGroups([{ name, students }]);
+    $('#paste').value = ''; $('#pasteName').value = '';
+    status(`Groupe « ${name} » ajouté (${students.length} élèves).`);
+  };
+
+  // ---------- Course ----------
+  const SECTIONS = [
+    { y: 270, title: 'La forêt boréale', say: 'traverse la forêt boréale en tête' },
+    { y: 1120, title: 'Le Chemin du Roy', say: 'file sur le Chemin du Roy' },
+    { y: 2385, title: 'Les moulins de la seigneurie', say: 'affronte les moulins de la seigneurie' },
+    { y: 3040, title: 'Les rapides de Lachine', say: 'saute les rapides de Lachine' },
+    { y: 3590, title: 'La chute Montmorency', say: 'plonge dans la chute Montmorency' },
+  ];
+  function buildCourse() {
+    const parts = [], spinners = [];
+    const base = { isStatic: true, friction: 0.02, restitution: 0.3 };
+    const seg = (x1, y1, x2, y2, t = 16, kind = 'wood') => {
+      const b = Bodies.rectangle((x1 + x2) / 2, (y1 + y2) / 2, Math.hypot(x2 - x1, y2 - y1), t,
+        { ...base, angle: Math.atan2(y2 - y1, x2 - x1), chamfer: { radius: t / 2 - 1 } });
+      b.kind = kind; parts.push(b); return b;
+    };
+    const peg = (x, y, r = 7, kind = 'peg') => {
+      const b = Bodies.circle(x, y, r, { ...base, restitution: 0.6 });
+      b.kind = kind; parts.push(b); return b;
+    };
+    const spinner = (x, y, len, w) => {
+      const b = Bodies.rectangle(x, y, len, 12, { ...base, angle: rand() * Math.PI, chamfer: { radius: 5 } });
+      b.kind = 'spin'; b.w = w; parts.push(b); spinners.push(b);
+      peg(x, y, 10, 'hub');
+    };
+    const H = 4430, finishY = 4080;
+    seg(40, -300, 40, H, 20, 'wall'); seg(860, -300, 860, H, 20, 'wall');
+    const gate = seg(40, 200, 860, 200, 14, 'gate');
+
+    // Forêt boréale: staggered pegs drawn as trees
+    for (let r = 0, y = 310; y < 1060; r++, y += 58)
+      for (let x = r % 2 ? 112 : 76; x < 840; x += 72) peg(x, y, 7, 'tree');
+
+    // Chemin du Roy: zigzag ramps
+    for (let i = 0; i < 5; i++) {
+      const y = 1150 + i * 220;
+      i % 2 ? seg(860, y, 160, y + 150) : seg(40, y, 740, y + 150);
+    }
+    seg(860, 2240, 520, 2330);
+
+    // Moulins: spinning bars and pegs
+    spinner(450, 2440, 260, 0.03);
+    spinner(230, 2630, 230, -0.035); spinner(670, 2630, 230, 0.035);
+    spinner(450, 2820, 260, -0.03);
+    [[2535, [110, 330, 570, 790]], [2725, [90, 450, 810]], [2915, [150, 300, 600, 750]]]
+      .forEach(([y, xs]) => xs.forEach(x => peg(x, y, 8)));
+
+    // Rapides de Lachine: bumpers
+    [[300, 3110], [600, 3110], [450, 3220], [190, 3320], [710, 3320], [450, 3430]].forEach(([x, y]) => {
+      const b = Bodies.circle(x, y, 28, { ...base, restitution: 0.9 });
+      b.kind = 'bump'; b.flash = 0; parts.push(b);
+    });
+    for (let x = 120; x < 800; x += 110) peg(x, 3525, 8);
+
+    // Chute Montmorency: funnel, then the drop to the finish
+    seg(40, 3610, 412, 3870); seg(860, 3610, 488, 3870);
+    seg(40, 4400, 860, 4400, 20, 'wall');
+    return { parts, spinners, gate, H, finishY };
+  }
+
+  // ---------- Simulation ----------
+  let engine = null, course = null, marbles = [], finishOrder = [];
+  let state = 'idle', raceT = 0, finishAt = 0, camY = 0, leader = null, lastLeader = null;
+  let sectionIdx = -1, raceGroup = null, tickT = 0, saidAt = 0;
+
+  function buildWorld(list) {
+    engine = Engine.create();
+    engine.gravity.y = 1;
+    engine.positionIterations = 10;
+    engine.velocityIterations = 8;
+    course = buildCourse();
+    Composite.add(engine.world, course.parts);
+    const slots = [];
+    for (let row = 0; row < 4; row++) for (let c = 0; c < 25; c++) slots.push({ x: 72 + c * 30.4 + (row % 2) * 15, y: 178 - row * 29 });
+    shuffle(slots);
+    const order = shuffle(list.slice(0, MAXN));
+    const labs = labels(order);
+    const hue0 = rand() * 360;
+    marbles = order.map((s, i) => {
+      const p = slots[i];
+      const b = Bodies.circle(p.x, p.y, R, { restitution: 0.45, friction: 0.004, frictionAir: 0.0008, density: 0.0016 });
+      const h = Math.round((hue0 + i * 137.508) % 360);
+      Object.assign(b, { kind: 'marble', student: s, name: labs[i], color: `hsl(${h} 74% 54%)`, dark: `hsl(${h} 70% 30%)`, light: `hsl(${h} 90% 82%)`, still: 0, done: false });
+      return b;
+    });
+    Composite.add(engine.world, marbles);
+    Events.on(engine, 'collisionStart', onCollide);
+    finishOrder = []; raceT = 0; camY = 0; leader = lastLeader = null; sectionIdx = -1;
+  }
+
+  function onCollide(ev) {
+    for (const p of ev.pairs) {
+      const a = p.bodyA, b = p.bodyB;
+      const m = a.kind === 'marble' ? a : b.kind === 'marble' ? b : null;
+      if (!m) continue;
+      const o = m === a ? b : a;
+      if (o.kind === 'bump') {
+        o.flash = 1;
+        const dx = m.position.x - o.position.x, dy = m.position.y - o.position.y, d = Math.hypot(dx, dy) || 1;
+        Body.setVelocity(m, { x: dx / d * 9, y: dy / d * 9 });
+        boing();
+      } else if (o.kind === 'peg' || o.kind === 'tree' || o.kind === 'spin' || o.kind === 'hub') tick();
+    }
+  }
+
+  function simStep() {
+    for (const s of course.spinners) { Body.setAngle(s, s.angle + s.w); Body.setAngularVelocity(s, s.w); }
+    Engine.update(engine, STEP);
+    raceT += STEP;
+    for (const b of course.parts) if (b.flash) b.flash = Math.max(0, b.flash - 0.05);
+    let best = null;
+    for (const m of marbles) {
+      const v = m.velocity, sp = Math.hypot(v.x, v.y);
+      if (sp > VMAX) Body.setVelocity(m, { x: v.x * VMAX / sp, y: v.y * VMAX / sp });
+      if (m.position.x < 50 || m.position.x > 850) Body.setPosition(m, { x: 450, y: m.position.y });
+      if (state !== 'countdown' && !m.done) {
+        m.still = sp < 0.25 ? m.still + 1 : 0;
+        if (m.still > 100) { Body.setVelocity(m, { x: (rand() - 0.5) * 7, y: -3 - rand() * 3 }); m.still = 0; }
+      }
+      if (!m.done && m.position.y > course.finishY) {
+        m.done = true; finishOrder.push(m);
+        if (finishOrder.length === 1) onWinner(m);
+        else updatePodium();
+      }
+      if (!m.done && (!best || m.position.y > best.position.y)) best = m;
+    }
+    leader = best;
+    if (state === 'running') {
+      if (!finishOrder.length && raceT > 120000 && best) { best.done = true; finishOrder.push(best); onWinner(best); }
+      commentate();
+    }
+    if (state === 'done' && (raceT - finishAt > 25000 || finishOrder.length === marbles.length)) state = 'over';
+  }
+
+  function commentate() {
+    if (!leader) return;
+    const now = performance.now();
+    const next = SECTIONS[sectionIdx + 1];
+    if (next && leader.position.y > next.y) {
+      sectionIdx++;
+      say(`${leader.name} ${next.say} !`); saidAt = now; lastLeader = leader; return;
+    }
+    if (leader !== lastLeader && now - saidAt > 1600) {
+      lastLeader = leader; saidAt = now;
+      say(pickOne(['{n} prend la tête !', '{n} passe devant !', '{n} mène la course !', 'Quelle remontée de {n} !', '{n} se faufile en tête !']).replace('{n}', leader.name));
+    }
+  }
+
+  function onWinner(m) {
+    state = 'finish'; finishAt = raceT;
+    say(`${m.name} franchit l’arrivée !`);
+    fanfare();
+    const g = raceGroup;
+    picked[g] = (picked[g] || []).filter(p => p.key !== keyOf(m.student));
+    picked[g].push({ key: keyOf(m.student), at: Date.now() });
+    if (opts.removeWinner) setIn(m.student, false, g);
+    save();
+    if (g === current) renderPanel();
+    setTimeout(() => { if (state === 'finish') { state = 'done'; showWinner(m); } }, 1300);
+  }
+
+  function showWinner(m) {
+    $('#winName').textContent = m.name;
+    $('#winFull').textContent = fullName(m.student);
+    $('#winFull').hidden = fullName(m.student) === m.name;
+    $('#winBall').style.background = `radial-gradient(circle at 34% 30%, ${m.light}, ${m.color} 45%, ${m.dark})`;
+    updatePodium();
+    $('#win').hidden = false;
+    $('#go').hidden = false; $('#go').textContent = 'Nouvelle course';
+    $('#again').focus({ preventScroll: true });
+    confetti(m);
+  }
+  function updatePodium() {
+    const ol = $('#podium');
+    ol.innerHTML = '';
+    finishOrder.slice(1, 3).forEach((m, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `${i + 2}<sup>e</sup> `;
+      const b = document.createElement('b'); b.textContent = m.name; li.append(b);
+      ol.append(li);
+    });
+  }
+  function hideWin() { $('#win').hidden = true; }
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function startRace() {
+    if (['countdown', 'running', 'finish'].includes(state)) return;
+    const list = grp().students.filter(s => isIn(s));
+    if (list.length < 2) { say('Coche au moins 2 élèves pour lancer une course.'); return; }
+    hideWin(); fx.parts = [];
+    raceGroup = current;
+    buildWorld(list);
+    state = 'countdown';
+    audio();
+    $('#go').hidden = true;
+    say(`${marbles.length} billes sur la ligne de départ…`);
+    const cd = $('#countdown');
+    for (const n of ['3', '2', '1', 'Go !']) {
+      cd.hidden = false; cd.textContent = n;
+      cd.classList.remove('pop'); void cd.offsetWidth; cd.classList.add('pop');
+      n === 'Go !' ? tone(880, 0.35, 'square', 0.06) : tone(440, 0.15, 'square', 0.05);
+      if (n === 'Go !') break;
+      await sleep(750);
+    }
+    Composite.remove(engine.world, course.gate);
+    course.gate.removed = true;
+    state = 'running'; saidAt = performance.now();
+    say('C’est parti !');
+    await sleep(600);
+    cd.hidden = true;
+  }
+
+  function preview() {
+    if (!['idle', 'over'].includes(state) || !$('#win').hidden) return;
+    state = 'idle';
+    const list = grp().students.filter(s => isIn(s));
+    buildWorld(list);
+    $('#go').hidden = false; $('#go').textContent = 'Lancer la course';
+    say(list.length >= 2 ? `${marbles.length} billes sur la ligne de départ. Appuie sur Lancer (ou Espace).` : 'Coche au moins 2 élèves pour lancer une course.');
+  }
+  function say(t) { $('#ticker').textContent = t; }
+
+  $('#go').onclick = startRace;
+  $('#again').onclick = () => { hideWin(); startRace(); };
+  $('#closeWin').onclick = () => { hideWin(); $('#go').focus({ preventScroll: true }); };
+  document.addEventListener('keydown', e => {
+    if (e.code !== 'Space' || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return;
+    e.preventDefault(); hideWin(); startRace();
+  });
+  $('#speed').onclick = () => { opts.speed = opts.speed === 1 ? 2 : opts.speed === 2 ? 3 : 1; save(); renderPanel(); };
+  $('#sound').onclick = () => { opts.sound = !opts.sound; save(); renderPanel(); };
+  $('#fs').onclick = () => {
+    const st = $('#stage');
+    try {
+      const p = document.fullscreenElement ? document.exitFullscreen() : st.requestFullscreen?.();
+      p?.catch?.(() => {});
+    } catch {}
+  };
+
+  // ---------- Sound ----------
+  let actx = null, lastTick = 0, lastBoing = 0;
+  function audio() {
+    if (!opts.sound) return null;
+    try {
+      actx ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+    } catch { return null; }
+    return actx;
+  }
+  function tone(f, dur = 0.08, type = 'sine', vol = 0.06, when = 0, f2 = 0) {
+    const a = audio();
+    if (!a) return;
+    const t = a.currentTime + when, o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+  }
+  function tick() { const n = performance.now(); if (n - lastTick < 45) return; lastTick = n; tone(900 + rand() * 900, 0.04, 'sine', 0.025); }
+  function boing() { const n = performance.now(); if (n - lastBoing < 90) return; lastBoing = n; tone(220, 0.25, 'triangle', 0.07, 0, 520); }
+  function fanfare() { [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, i > 3 ? 0.4 : 0.16, 'triangle', 0.08, i * 0.13)); }
+
+  // ---------- Rendering ----------
+  const cv = $('#track'), ctx = cv.getContext('2d');
+  const fxc = $('#fx'), fctx = fxc.getContext('2d');
+  const fx = { parts: [] };
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let dpr = 1;
+  const C = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'surface', 'ink', 'muted', 'line', 'accent', 'gold', 'track', 'track-line', 'wood', 'wood-edge', 'peg', 'tree', 'spin', 'bump', 'water'])
+      C[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  readColors();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    for (const c of [cv, fxc]) { c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr); }
+  }
+  new ResizeObserver(resize).observe($('#stage'));
+  resize();
+
+  function view() {
+    const cw = cv.clientWidth, ch = cv.clientHeight;
+    const scale = Math.min(cw / W, ch / 700);
+    return { cw, ch, scale, ox: (cw - W * scale) / 2, viewH: ch / scale };
+  }
+  function updateCamera(v) {
+    let target = 0;
+    if (state === 'running' && leader) target = leader.position.y - v.viewH * 0.42;
+    else if (['finish', 'done', 'over'].includes(state)) target = course.finishY - v.viewH * 0.55;
+    target = clamp(target, 0, Math.max(0, course.H - v.viewH));
+    camY += (target - camY) * (reduceMotion.matches ? 0.3 : state === 'finish' ? 0.12 : 0.08);
+  }
+  function path(vs) { ctx.beginPath(); ctx.moveTo(vs[0].x, vs[0].y); for (let i = 1; i < vs.length; i++) ctx.lineTo(vs[i].x, vs[i].y); ctx.closePath(); }
+  function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+
+  function drawDeco(t, top, bot) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '400 30px Bungee, "Arial Black", sans-serif';
+    ctx.fillStyle = C['track-line'];
+    ctx.fillText('DÉPART', W / 2, 36);
+    ctx.font = '400 24px Bungee, "Arial Black", sans-serif';
+    for (const s of SECTIONS) if (s.y > top - 40 && s.y < bot + 40) ctx.fillText(s.title.toUpperCase(), W / 2, s.y);
+    ctx.strokeStyle = C['track-line']; ctx.lineWidth = 3;
+    for (let y = 3080; y < 3570; y += 62) {
+      if (y < top - 20 || y > bot + 20) continue;
+      ctx.beginPath();
+      for (let x = 50; x <= 850; x += 10) ctx.lineTo(x, y + Math.sin(x / 38 + t / 500 + y) * 6);
+      ctx.stroke();
+    }
+    if (bot > 3870 && top < 4080) {
+      ctx.strokeStyle = C.water; ctx.lineWidth = 3; ctx.setLineDash([18, 14]);
+      ctx.lineDashOffset = -(t / 20) % 32;
+      for (let x = 420; x <= 480; x += 12) { ctx.beginPath(); ctx.moveTo(x, 3880); ctx.lineTo(x + Math.sin(x) * 4, 4070); ctx.stroke(); }
+      ctx.setLineDash([]);
+    }
+    const fy = course.finishY;
+    if (fy > top - 60 && fy < bot + 60) {
+      for (let x = 50, i = 0; x < 850; x += 16, i++) {
+        ctx.fillStyle = i % 2 ? C.ink : C.surface; ctx.fillRect(x, fy - 8, 16, 8);
+        ctx.fillStyle = i % 2 ? C.surface : C.ink; ctx.fillRect(x, fy, 16, 8);
+      }
+      ctx.fillStyle = C.ink; ctx.font = '400 30px Bungee, "Arial Black", sans-serif';
+      ctx.fillText('ARRIVÉE', W / 2, fy + 46);
+    }
+  }
+
+  function drawStatics(top, bot) {
+    for (const b of course.parts) {
+      if (b.removed || b.bounds.max.y < top - 30 || b.bounds.min.y > bot + 30) continue;
+      const { x, y } = b.position;
+      switch (b.kind) {
+        case 'wall': case 'wood': case 'gate':
+          path(b.vertices);
+          ctx.fillStyle = b.kind === 'gate' ? C.accent : C.wood; ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = b.kind === 'gate' ? C.accent : C['wood-edge']; ctx.stroke();
+          break;
+        case 'tree':
+          ctx.fillStyle = C.tree;
+          ctx.beginPath(); ctx.moveTo(x, y - 11); ctx.lineTo(x + 9, y + 6); ctx.lineTo(x - 9, y + 6); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = C['wood-edge']; ctx.fillRect(x - 1.5, y + 6, 3, 4);
+          break;
+        case 'peg':
+          circle(x, y, b.circleRadius); ctx.fillStyle = C.peg; ctx.fill();
+          break;
+        case 'spin':
+          path(b.vertices); ctx.fillStyle = C.spin; ctx.fill();
+          break;
+        case 'hub':
+          circle(x, y, b.circleRadius); ctx.fillStyle = C.surface; ctx.fill();
+          ctx.lineWidth = 3; ctx.strokeStyle = C.spin; ctx.stroke();
+          break;
+        case 'bump': {
+          const r = b.circleRadius + b.flash * 5;
+          circle(x, y, r); ctx.fillStyle = C.bump; ctx.fill();
+          circle(x, y, r * 0.62); ctx.lineWidth = 4; ctx.strokeStyle = b.flash > 0.2 ? C.gold : C.surface; ctx.stroke();
+          break;
+        }
+      }
+    }
+  }
+
+  function drawMarbles(top, bot) {
+    for (const m of marbles) {
+      const { x, y } = m.position;
+      if (y < top - 30 || y > bot + 30) continue;
+      const g = ctx.createRadialGradient(x - R * 0.35, y - R * 0.4, 1, x, y, R);
+      g.addColorStop(0, m.light); g.addColorStop(0.45, m.color); g.addColorStop(1, m.dark);
+      circle(x, y, R); ctx.fillStyle = g; ctx.fill();
+    }
+    ctx.font = '700 13px "Atkinson Hyperlegible", system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = C.track;
+    for (const m of marbles) {
+      const { x, y } = m.position;
+      if (y < top - 30 || y > bot + 30) continue;
+      ctx.strokeText(m.name, x, y + R + 2);
+      ctx.fillStyle = m === leader && state === 'running' ? C.accent : C.ink;
+      ctx.fillText(m.name, x, y + R + 2);
+    }
+    const crownFor = finishOrder[0] || (state === 'running' ? leader : null);
+    if (crownFor) {
+      const { x, y } = crownFor.position, cy = y - R - 6;
+      ctx.fillStyle = C.gold;
+      ctx.beginPath();
+      ctx.moveTo(x - 10, cy); ctx.lineTo(x - 10, cy - 10); ctx.lineTo(x - 5, cy - 5); ctx.lineTo(x, cy - 13);
+      ctx.lineTo(x + 5, cy - 5); ctx.lineTo(x + 10, cy - 10); ctx.lineTo(x + 10, cy); ctx.closePath(); ctx.fill();
+    }
+  }
+
+  function drawMinimap(v) {
+    if (v.ch < 320) return;
+    const mh = Math.min(v.ch - 150, 260), mw = 12, mx = v.cw - mw - 14, my = (v.ch - mh) / 2, k = mh / course.H;
+    ctx.fillStyle = C.surface; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(mx - 3, my - 3, mw + 6, mh + 6, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.ink; ctx.fillRect(mx, my + course.finishY * k, mw, 2);
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+    ctx.strokeRect(mx - 1, my + camY * k, mw + 2, Math.min(mh, v.viewH * k));
+    for (const m of marbles) {
+      ctx.fillStyle = m.color;
+      ctx.beginPath(); ctx.arc(mx + mw / 2 + (m.position.x / W - 0.5) * mw * 0.8, my + clamp(m.position.y, 0, course.H) * k, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  let rankAt = 0;
+  function renderRank(now) {
+    if (now - rankAt < 200) return;
+    rankAt = now;
+    const ol = $('#rank');
+    const active = ['running', 'finish', 'done', 'over'].includes(state);
+    ol.hidden = !active;
+    if (!active) return;
+    const live = marbles.filter(m => !m.done).sort((a, b) => b.position.y - a.position.y);
+    const top = finishOrder.concat(live).slice(0, 5);
+    ol.innerHTML = '';
+    top.forEach((m, i) => {
+      const li = document.createElement('li');
+      if (m.done) li.className = 'done';
+      li.innerHTML = `<span class="pos">${i + 1}</span><span class="sw" style="background:${m.color}"></span><span class="nm"></span>`;
+      li.querySelector('.nm').textContent = m.name;
+      ol.append(li);
+    });
+  }
+
+  function confetti(m) {
+    if (reduceMotion.matches) return;
+    const w = fxc.clientWidth, cols = [m.color, m.light, C.gold, C.accent, C.bump];
+    for (let i = 0; i < 180; i++) {
+      fx.parts.push({ x: w / 2 + (rand() - 0.5) * w * 0.3, y: fxc.clientHeight * 0.35, vx: (rand() - 0.5) * 14, vy: -6 - rand() * 10,
+        r: rand() * 6, vr: (rand() - 0.5) * 0.4, s: 5 + rand() * 6, c: pickOne(cols), life: 1 });
+    }
+  }
+  function drawFx(dt) {
+    fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fctx.clearRect(0, 0, fxc.clientWidth, fxc.clientHeight);
+    if (!fx.parts.length) return;
+    const f = dt / 16.67;
+    for (const p of fx.parts) {
+      p.vy += 0.35 * f; p.vx *= 0.99; p.x += p.vx * f; p.y += p.vy * f; p.r += p.vr * f; p.life -= 0.004 * f;
+      fctx.save(); fctx.translate(p.x, p.y); fctx.rotate(p.r); fctx.globalAlpha = clamp(p.life * 2, 0, 1);
+      fctx.fillStyle = p.c; fctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); fctx.restore();
+    }
+    fx.parts = fx.parts.filter(p => p.life > 0 && p.y < fxc.clientHeight + 40);
+  }
+
+  let last = performance.now(), acc = 0;
+  function frame(now) {
+    const dt = Math.min(100, now - last);
+    last = now;
+    if (['countdown', 'running', 'finish', 'done'].includes(state)) {
+      acc += dt * opts.speed * (state === 'finish' ? 0.3 : 1);
+      acc = Math.min(acc, STEP * 10);
+      while (acc >= STEP) { simStep(); acc -= STEP; }
+    }
+    const v = view();
+    updateCamera(v);
+    const top = camY, bot = camY + v.viewH;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, v.cw, v.ch);
+    ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.ox, -camY * dpr * v.scale);
+    ctx.fillStyle = C.track; ctx.fillRect(0, top, W, v.viewH);
+    drawDeco(now, top, bot);
+    drawStatics(top, bot);
+    drawMarbles(top, bot);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawMinimap(v);
+    renderRank(now);
+    drawFx(dt);
+    requestAnimationFrame(frame);
+  }
+
+  renderPanel();
+  preview();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

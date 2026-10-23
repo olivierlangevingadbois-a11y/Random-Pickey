@@ -14,7 +14,7 @@
   --bg: #EDF0F6; --surface: #FFFFFF; --ink: #16203A; --muted: #59647F; --line: #D5DBE8;
   --accent: #1F4FA3; --accent-ink: #FFFFFF; --gold: #C98A0C;
   --track: #DFE6F2; --track-line: #C6D1E5; --wood: #B8763A; --wood-edge: #855024;
-  --peg: #46557A; --tree: #2F6B4C; --spin: #2D7A58; --bump: #C7372C; --water: #7FA2D6;
+  --peg: #46557A; --tree: #2F6B4C; --spin: #2D7A58; --bump: #C7372C; --water: #7FA2D6; --ice: #8EC3E6;
   --f-display: "Bungee", "Arial Black", Impact, sans-serif;
   --f-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -23,7 +23,7 @@
     --bg: #0E1420; --surface: #161F31; --ink: #E6EBF5; --muted: #98A3BC; --line: #28334A;
     --accent: #88AAF2; --accent-ink: #0E1420; --gold: #F0B83A;
     --track: #121B2B; --track-line: #1E2A41; --wood: #C2864C; --wood-edge: #7A4A21;
-    --peg: #8693B2; --tree: #5FAE82; --spin: #4FB487; --bump: #E4574C; --water: #3F5F93;
+    --peg: #8693B2; --tree: #5FAE82; --spin: #4FB487; --bump: #E4574C; --water: #3F5F93; --ice: #5E93BF;
     color-scheme: dark;
   }
 }
@@ -31,7 +31,7 @@
   --bg: #0E1420; --surface: #161F31; --ink: #E6EBF5; --muted: #98A3BC; --line: #28334A;
   --accent: #88AAF2; --accent-ink: #0E1420; --gold: #F0B83A;
   --track: #121B2B; --track-line: #1E2A41; --wood: #C2864C; --wood-edge: #7A4A21;
-  --peg: #8693B2; --tree: #5FAE82; --spin: #4FB487; --bump: #E4574C; --water: #3F5F93;
+  --peg: #8693B2; --tree: #5FAE82; --spin: #4FB487; --bump: #E4574C; --water: #3F5F93; --ice: #5E93BF;
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -153,12 +153,12 @@ details .block { gap: 8px; }
 }
 .countdown.pop, .banner.pop { animation: pop .6s ease-out; }
 .banner {
-  position: absolute; z-index: 4; left: 50%; top: 18%; translate: -50% 0; width: min(90%, 560px);
+  position: absolute; z-index: 4; left: 50%; top: 14%; translate: -50% 0; width: min(90%, 560px);
   pointer-events: none; text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center;
   background: var(--surface); border: 2px solid var(--gold); border-radius: 16px; padding: 14px 18px;
   box-shadow: 0 14px 40px rgb(0 0 0 / .25);
 }
-.banner strong { font: 400 clamp(24px, 4.5vw, 44px)/1.05 var(--f-display); color: var(--gold); text-wrap: balance; }
+.banner strong { font: 400 clamp(22px, 3.6vw, 36px)/1.05 var(--f-display); color: var(--gold); text-wrap: balance; }
 .banner span { font-weight: 700; font-size: 17px; }
 @keyframes pop { from { transform: scale(1.6); opacity: 0; } 30% { opacity: 1; } to { transform: scale(1); } }
 
@@ -480,70 +480,173 @@ details .block { gap: 8px; }
   };
 
   // ---------- Course ----------
-  const SECTIONS = [
-    { y: 270, title: 'La forêt boréale', say: 'traverse la forêt boréale en tête' },
-    { y: 1120, title: 'Le Chemin du Roy', say: 'file sur le Chemin du Roy' },
-    { y: 2405, title: 'L’écluse de Lachine', say: 'arrive en tête à l’écluse de Lachine' },
-    { y: 2520, title: 'Les moulins de la seigneurie', say: 'affronte les moulins de la seigneurie' },
-    { y: 3210, title: 'Les rapides du Long-Sault', say: 'saute les rapides du Long-Sault' },
-    { y: 3760, title: 'La chute Montmorency', say: 'plonge dans la chute Montmorency' },
-  ];
-  const LOCK_Y = 2450, LOCK_TOP = 2340, LOCK_SHARE = 0.8, LOCK_WAIT = 6500;
+  // Every race assembles a new track: 2 random sections, the lock, 3 more random sections, then the falls.
+  const LOCK_SHARE = 0.8, LOCK_WAIT = 6500;
+  const MODULES = {
+    foret: { title: 'La forêt boréale', say: 'traverse la forêt boréale en tête' },
+    chemin: { title: 'Le Chemin du Roy', say: 'file sur le Chemin du Roy' },
+    moulins: { title: 'Les moulins à vent', say: 'affronte les moulins à vent' },
+    rapides: { title: 'Les rapides du Long-Sault', say: 'saute les rapides du Long-Sault' },
+    roue: { title: 'La roue du moulin à eau', say: 'arrive à la roue du moulin à eau' },
+    batterie: { title: 'La batterie royale', say: 'passe devant les canons de la batterie royale' },
+    pont: { title: 'Le pont de glace', say: 'glisse sur le pont de glace' },
+    trappes: { title: 'Les trappes de la citadelle', say: 'tombe sur les trappes de la citadelle' },
+    lock: { title: 'L’écluse de Lachine', say: 'arrive en tête à l’écluse de Lachine' },
+    chute: { title: 'La chute Montmorency', say: 'plonge dans la chute Montmorency' },
+  };
+
   function buildCourse() {
-    const parts = [], spinners = [];
+    const parts = [], kin = [], sections = [], deco = [], cups = [];
     const base = { isStatic: true, friction: 0.02, restitution: 0.3 };
+    let mir = false;
+    const X = x => mir ? W - x : x;
+    const add = (b, kind) => { b.kind = kind; parts.push(b); return b; };
     const seg = (x1, y1, x2, y2, t = 16, kind = 'wood') => {
-      const b = Bodies.rectangle((x1 + x2) / 2, (y1 + y2) / 2, Math.hypot(x2 - x1, y2 - y1), t,
-        { ...base, angle: Math.atan2(y2 - y1, x2 - x1), chamfer: { radius: t / 2 - 1 } });
-      b.kind = kind; parts.push(b); return b;
+      x1 = X(x1); x2 = X(x2);
+      return add(Bodies.rectangle((x1 + x2) / 2, (y1 + y2) / 2, Math.hypot(x2 - x1, y2 - y1), t,
+        { ...base, angle: Math.atan2(y2 - y1, x2 - x1), chamfer: { radius: t / 2 - 1 } }), kind);
     };
-    const peg = (x, y, r = 7, kind = 'peg') => {
-      const b = Bodies.circle(x, y, r, { ...base, restitution: 0.6 });
-      b.kind = kind; parts.push(b); return b;
-    };
-    const spinner = (x, y, len, w) => {
-      const b = Bodies.rectangle(x, y, len, 12, { ...base, angle: rand() * Math.PI, chamfer: { radius: 5 } });
-      b.kind = 'spin'; b.w = w; parts.push(b); spinners.push(b);
+    const peg = (x, y, r = 7, kind = 'peg') => add(Bodies.circle(X(x), y, r, { ...base, restitution: 0.6 }), kind);
+    const spread = y => { for (let x = 110; x < 820; x += 115) peg(x, y, 8); };
+    const spinner = (x, y, len) => {
+      const w = (0.025 + rand() * 0.02) * (rand() < 0.5 ? -1 : 1);
+      const b = add(Bodies.rectangle(X(x), y, len, 12, { ...base, angle: rand() * Math.PI, chamfer: { radius: 5 } }), 'spin');
+      kin.push(() => { Body.setAngle(b, b.angle + w); Body.setAngularVelocity(b, w); });
       peg(x, y, 10, 'hub');
     };
-    const H = 4600, finishY = 4250, D = 170;
-    seg(40, -300, 40, H, 20, 'wall'); seg(860, -300, 860, H, 20, 'wall');
+    let lock, lockY = 0, lockTop = 0, finishY = 0;
+
+    const BUILD = {
+      foret(y) {
+        for (let r = 0, yy = y + 40; yy < y + 560; r++, yy += 58)
+          for (let x = r % 2 ? 112 : 76; x < 840; x += 72) peg(x, yy, 7, 'tree');
+        return 600;
+      },
+      chemin(y) {
+        for (let i = 0; i < 4; i++) {
+          const yy = y + 40 + i * 220;
+          i % 2 ? seg(860, yy, 160, yy + 150) : seg(40, yy, 740, yy + 150);
+        }
+        return 900;
+      },
+      moulins(y) {
+        spread(y + 30);
+        spinner(450, y + 185, 260);
+        spinner(230, y + 370, 230); spinner(670, y + 370, 230);
+        spinner(450, y + 555, 260);
+        [[y + 275, [110, 330, 570, 790]], [y + 465, [90, 450, 810]], [y + 650, [150, 300, 600, 750]]]
+          .forEach(([yy, xs]) => xs.forEach(x => peg(x, yy, 8)));
+        return 710;
+      },
+      rapides(y) {
+        spread(y + 30);
+        [[300, 140], [600, 140], [450, 250], [190, 350], [710, 350], [450, 460]].forEach(([x, dy]) => {
+          add(Bodies.circle(X(x), y + dy, 28, { ...base, restitution: 0.9 }), 'bump').flash = 0;
+        });
+        for (let x = 120; x < 800; x += 110) peg(x, y + 555, 8);
+        deco.push({ k: 'waves', y1: y + 80, y2: y + 540 });
+        return 600;
+      },
+      // A water wheel with cupped arms: marbles landing on the rising side get carried back up
+      roue(y) {
+        spread(y + 30);
+        seg(40, y + 90, 235, y + 170); seg(860, y + 90, 665, y + 170);
+        const cx = 450, cy = y + 330, L = 185, w = 0.016 * (mir ? -1 : 1), sg = Math.sign(w), arms = [];
+        for (let i = 0; i < 6; i++) {
+          const arm = add(Bodies.rectangle(cx, cy, L, 12, { ...base, friction: 0.08, chamfer: { radius: 5 } }), 'arm');
+          const lip = add(Bodies.rectangle(cx, cy, 40, 10, { ...base, chamfer: { radius: 4 } }), 'arm');
+          arms.push({ arm, lip, a0: i * Math.PI / 3 });
+        }
+        peg(cx, cy, 18, 'axle');
+        let th = rand() * Math.PI;
+        const place = first => {
+          for (const { arm, lip, a0 } of arms) {
+            const a = th + a0, c = Math.cos(a), s = Math.sin(a);
+            const ps = [[arm, { x: cx + c * L / 2, y: cy + s * L / 2 }, a],
+              [lip, { x: cx + c * (L - 4) - s * sg * 18, y: cy + s * (L - 4) + c * sg * 18 }, a + Math.PI / 2]];
+            for (const [b, p, ang] of ps) {
+              const old = { ...b.position };
+              Body.setPosition(b, p); Body.setAngle(b, ang);
+              if (!first) { Body.setVelocity(b, { x: p.x - old.x, y: p.y - old.y }); Body.setAngularVelocity(b, w); }
+            }
+          }
+        };
+        place(true);
+        kin.push(() => { th += w; place(false); });
+        deco.push({ k: 'rim', x: cx, y: cy, r: L + 8 });
+        return 570;
+      },
+      // Three cannon cups: a marble that settles in one is fired back up after a short fuse
+      batterie(y) {
+        spread(y + 30);
+        const cy = y + 300;
+        for (const cx of [190, 450, 710]) {
+          seg(cx - 78, cy - 72, cx, cy, 14, 'cannon'); seg(cx, cy, cx + 78, cy - 72, 14, 'cannon');
+          cups.push({ x: cx, y: cy, at: 0, flash: 0 });
+        }
+        return 420;
+      },
+      // Tilting ice planks with no friction
+      pont(y) {
+        spread(y + 30);
+        const rows = [[y + 150, [[250, 260], [650, 260]]], [y + 320, [[160, 200], [450, 200], [740, 200]]], [y + 490, [[250, 260], [650, 260]]]];
+        for (const [yy, ps] of rows) for (const [x, len] of ps) {
+          const b = add(Bodies.rectangle(X(x), yy, len, 12, { ...base, friction: 0, restitution: 0.15, chamfer: { radius: 5 } }), 'ice');
+          const A = 0.35 + rand() * 0.25, om = 0.02 + rand() * 0.025, ph = rand() * 6.28;
+          let t = 0;
+          kin.push(() => { t++; const a = A * Math.sin(om * t + ph), prev = b.angle; Body.setAngle(b, a); Body.setAngularVelocity(b, a - prev); });
+        }
+        return 580;
+      },
+      // A floor of trapdoors that open at random
+      trappes(y) {
+        spread(y + 30);
+        const fy = y + 200, tiles = [];
+        for (let i = 0; i < 8; i++) {
+          const b = add(Bodies.rectangle(100 + i * 100, fy, 100, 14, { ...base }), 'trap');
+          b.until = 1500 + rand() * 2500;
+          tiles.push(b);
+        }
+        kin.push(() => {
+          for (const b of tiles) {
+            if (raceT < b.until) continue;
+            if (!b.removed) { Composite.remove(engine.world, b); b.removed = true; b.until = raceT + 600 + rand() * 500; continue; }
+            const blocked = marbles.some(m => Math.abs(m.position.x - b.position.x) < 50 + R && Math.abs(m.position.y - fy) < 7 + R);
+            if (blocked) { b.until = raceT + 100; continue; }
+            Composite.add(engine.world, b); b.removed = false; b.until = raceT + 1200 + rand() * 2600;
+          }
+        });
+        return 300;
+      },
+      // The lock regroups the pack: a full-width gate that opens once most marbles are waiting
+      lock(y) {
+        for (let x = 160; x < 800; x += 120) peg(x, y + 50, 8);
+        lockY = y + 140; lockTop = y + 20;
+        lock = seg(40, lockY, 860, lockY, 14, 'lock');
+        return 200;
+      },
+      chute(y) {
+        seg(40, y + 20, 412, y + 280); seg(860, y + 20, 488, y + 280);
+        finishY = y + 470;
+        deco.push({ k: 'water', y1: y + 290, y2: finishY - 10 });
+        seg(40, y + 790, 860, y + 790, 20, 'wall');
+        return 820;
+      },
+    };
+
     const gate = seg(40, 200, 860, 200, 14, 'gate');
-
-    // Forêt boréale: staggered pegs drawn as trees
-    for (let r = 0, y = 310; y < 1060; r++, y += 58)
-      for (let x = r % 2 ? 112 : 76; x < 840; x += 72) peg(x, y, 7, 'tree');
-
-    // Chemin du Roy: zigzag ramps
-    for (let i = 0; i < 5; i++) {
-      const y = 1150 + i * 220;
-      i % 2 ? seg(860, y, 160, y + 150) : seg(40, y, 740, y + 150);
+    const pool = shuffle(Object.keys(BUILD).filter(k => k !== 'lock' && k !== 'chute'));
+    const plan = [...pool.slice(0, 2), 'lock', ...pool.slice(2, 5), 'chute'];
+    let y = 260;
+    for (const k of plan) {
+      mir = k !== 'lock' && k !== 'chute' && rand() < 0.5;
+      sections.push({ y: y + 12, ...MODULES[k] });
+      y += BUILD[k](y);
     }
-    seg(860, 2240, 520, 2310);
-
-    // Écluse de Lachine: pegs spread the pack over a full-width gate that holds everyone,
-    // then drops them all at once so the second half is a fresh race
-    for (let x = 160; x < 800; x += 120) peg(x, 2370, 8);
-    const lock = seg(40, LOCK_Y, 860, LOCK_Y, 14, 'lock');
-
-    // Moulins: spinning bars and pegs
-    spinner(450, 2610, 260, 0.03);
-    spinner(230, 2800, 230, -0.035); spinner(670, 2800, 230, 0.035);
-    spinner(450, 2990, 260, -0.03);
-    [[2705, [110, 330, 570, 790]], [2895, [90, 450, 810]], [3085, [150, 300, 600, 750]]]
-      .forEach(([y, xs]) => xs.forEach(x => peg(x, y, 8)));
-
-    // Rapides du Long-Sault: bumpers
-    [[300, 3110], [600, 3110], [450, 3220], [190, 3320], [710, 3320], [450, 3430]].forEach(([x, y]) => {
-      const b = Bodies.circle(x, y + D, 28, { ...base, restitution: 0.9 });
-      b.kind = 'bump'; b.flash = 0; parts.push(b);
-    });
-    for (let x = 120; x < 800; x += 110) peg(x, 3525 + D, 8);
-
-    // Chute Montmorency: funnel, then the drop to the finish
-    seg(40, 3610 + D, 412, 3870 + D); seg(860, 3610 + D, 488, 3870 + D);
-    seg(40, H - 30, 860, H - 30, 20, 'wall');
-    return { parts, spinners, gate, lock, H, finishY, D };
+    mir = false;
+    const H = y;
+    seg(40, -300, 40, H, 20, 'wall'); seg(860, -300, 860, H, 20, 'wall');
+    return { parts, kin, cups, sections, deco, gate, lock, lockY, lockTop, H, finishY };
   }
 
   // ---------- Simulation ----------
@@ -551,7 +654,7 @@ details .block { gap: 8px; }
   let state = 'idle', raceT = 0, finishAt = 0, camY = 0, leader = null, lastLeader = null;
   let sectionIdx = -1, raceGroup = null, saidAt = 0;
   const lk = { firstAt: 0, arrived: 0, need: 0 };
-  const ev = { next: Infinity, last: '', fx: [], dam: null, flash: 0 };
+  const ev = { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0 };
 
   function buildWorld(list) {
     engine = Engine.create();
@@ -570,14 +673,14 @@ details .block { gap: 8px; }
       const p = slots[i];
       const b = Bodies.circle(p.x, p.y, R, { restitution: 0.45, friction: 0.004, frictionAir: 0.0008, density: 0.0016 });
       const h = Math.round((hue0 + i * 137.508) % 360);
-      Object.assign(b, { kind: 'marble', student: s, name: labs[i], color: `hsl(${h} 74% 54%)`, dark: `hsl(${h} 70% 30%)`, light: `hsl(${h} 90% 82%)`, still: 0, done: false });
+      Object.assign(b, { kind: 'marble', student: s, name: labs[i], color: `hsl(${h} 74% 54%)`, dark: `hsl(${h} 70% 30%)`, light: `hsl(${h} 90% 82%)`, still: 0, done: false, maxY: p.y });
       return b;
     });
     Composite.add(engine.world, marbles);
     Events.on(engine, 'collisionStart', onCollide);
     finishOrder = []; raceT = 0; camY = 0; leader = lastLeader = null; sectionIdx = -1;
     Object.assign(lk, { firstAt: 0, arrived: 0, need: 0 });
-    Object.assign(ev, { next: Infinity, last: '', fx: [], dam: null, flash: 0 });
+    Object.assign(ev, { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0 });
   }
 
   function onCollide(ev) {
@@ -596,7 +699,7 @@ details .block { gap: 8px; }
   }
 
   function simStep() {
-    for (const s of course.spinners) { Body.setAngle(s, s.angle + s.w); Body.setAngularVelocity(s, s.w); }
+    for (const f of course.kin) f();
     Engine.update(engine, STEP);
     raceT += STEP;
     for (const b of course.parts) if (b.flash) b.flash = Math.max(0, b.flash - 0.05);
@@ -605,8 +708,9 @@ details .block { gap: 8px; }
       const v = m.velocity, sp = Math.hypot(v.x, v.y);
       if (sp > VMAX) Body.setVelocity(m, { x: v.x * VMAX / sp, y: v.y * VMAX / sp });
       if (m.position.x < 50 || m.position.x > 850) Body.setPosition(m, { x: 450, y: m.position.y });
-      const waiting = !course.lock.removed && m.position.y > LOCK_TOP && m.position.y < LOCK_Y;
-      if (state !== 'countdown' && !m.done && !waiting) {
+      const waiting = !course.lock.removed && m.position.y > course.lockTop && m.position.y < course.lockY;
+      if (m.position.y > m.maxY) m.maxY = m.position.y;
+      if (state !== 'countdown' && !m.done && !waiting && !m.isStatic) {
         m.still = sp < 0.25 ? m.still + 1 : 0;
         if (m.still > 100) { Body.setVelocity(m, { x: (rand() - 0.5) * 7, y: -3 - rand() * 3 }); m.still = 0; }
       }
@@ -618,6 +722,7 @@ details .block { gap: 8px; }
       if (!m.done && (!best || m.position.y > best.position.y)) best = m;
     }
     leader = best;
+    updateCups();
     if (state === 'running') {
       if (!finishOrder.length && raceT > 120000 && best) { best.done = true; finishOrder.push(best); onWinner(best); }
       updateLock();
@@ -630,14 +735,20 @@ details .block { gap: 8px; }
   function commentate() {
     if (!leader) return;
     const now = performance.now();
-    const next = SECTIONS[sectionIdx + 1];
+    const next = course.sections[sectionIdx + 1];
     if (next && leader.position.y > next.y) {
       sectionIdx++;
       say(`${leader.name} ${next.say} !`); saidAt = now; lastLeader = leader; return;
     }
     if (!course.lock.removed && lk.firstAt) return;
     if (leader !== lastLeader && now - saidAt > 1600) {
+      const old = lastLeader;
       lastLeader = leader; saidAt = now;
+      if (old && !old.done && old.maxY - old.position.y > 120) {
+        say(pickOne(['Oh non ! {o} recule et perd la tête au profit de {n} !', 'Retournement ! {o} perd sa place, {n} en profite !', 'Catastrophe pour {o} ! {n} passe devant !'])
+          .replace('{o}', old.name).replace('{n}', leader.name));
+        return;
+      }
       say(pickOne(['{n} prend la tête !', '{n} passe devant !', '{n} mène la course !', 'Quelle remontée de {n} !', '{n} se faufile en tête !']).replace('{n}', leader.name));
     }
   }
@@ -646,7 +757,7 @@ details .block { gap: 8px; }
   function updateLock() {
     const L = course.lock;
     if (L.removed) return;
-    const arrived = marbles.filter(m => m.position.y > LOCK_TOP).length;
+    const arrived = marbles.filter(m => m.position.y > course.lockTop).length;
     lk.need = Math.max(2, Math.ceil(marbles.length * LOCK_SHARE));
     if (arrived && !lk.firstAt) lk.firstAt = raceT;
     const now = performance.now();
@@ -658,7 +769,27 @@ details .block { gap: 8px; }
     banner('L’écluse s’ouvre !', 'Tout le monde repart en même temps');
     say('L’écluse s’ouvre ! Tout est à refaire !'); saidAt = now;
     tone(392, 0.18, 'triangle', 0.08); tone(523, 0.3, 'triangle', 0.08, 0.16);
-    ev.next = raceT + 1500 + rand() * 1500;
+    ev.next = raceT + 1200 + rand() * 1000;
+  }
+
+  // Cannon cups: fire whatever has settled in them after a short fuse
+  function updateCups() {
+    for (const c of course.cups) {
+      c.flash = Math.max(0, c.flash - 0.04);
+      const inside = marbles.filter(m => !m.done && Math.abs(m.position.x - c.x) < 62 && m.position.y > c.y - 72 && m.position.y < c.y);
+      inside.forEach(m => { m.still = 0; });
+      if (inside.length && !c.at) c.at = raceT + 500 + rand() * 1200;
+      if (!c.at || raceT < c.at) continue;
+      c.at = 0;
+      if (!inside.length) continue;
+      for (const m of inside) Body.setVelocity(m, { x: (rand() - 0.5) * 9, y: -VMAX });
+      c.flash = 1;
+      ev.fx.push({ k: 'ring', x: c.x, y: c.y - 30, t: performance.now() });
+      noise(0.35, 500, 0.3);
+      if (inside.includes(leader) && performance.now() - saidAt > 800) {
+        say(`Boum ! La batterie royale renvoie ${leader.name} dans les airs !`); saidAt = performance.now();
+      }
+    }
   }
 
   function findSpot(y1, y2) {
@@ -670,50 +801,107 @@ details .block { gap: 8px; }
     }
     return null;
   }
-  function teleport(m, p) { Body.setPosition(m, p); Body.setVelocity(m, { x: 0, y: 0 }); m.still = 0; }
+  function teleport(m, p) { Body.setPosition(m, p); Body.setVelocity(m, { x: 0, y: 0 }); m.still = 0; m.maxY = p.y; }
+  const now_ = () => performance.now();
+  const backHalf = live => live.slice(Math.ceil(live.length / 2)).filter(m => !m.isStatic);
 
+  // Each event gets the marbles still racing in the current half (leader first) and that half's bounds
   const EVENTS = {
-    foudre(live) {
-      const m = live[0], from = { ...m.position };
-      const p = findSpot(Math.max(LOCK_Y + 60, from.y - 850), from.y - 450);
+    foudre: { w: 1, run(live, z1) {
+      const m = live[0];
+      if (m.isStatic) return false;
+      const from = { ...m.position }, p = findSpot(Math.max(z1, from.y - 850), from.y - 400);
       if (!p) return false;
       const pts = [];
       for (let y = from.y - 700, x = from.x; y < from.y; y += 70) { pts.push({ x, y }); x = from.x + (rand() - 0.5) * 90; }
       pts.push(from);
-      ev.fx.push({ k: 'bolt', pts, t: performance.now() }, { k: 'ring', x: p.x, y: p.y, t: performance.now() });
+      ev.fx.push({ k: 'bolt', pts, t: now_() }, { k: 'ring', x: p.x, y: p.y, t: now_() });
       teleport(m, p);
       ev.flash = 1;
       banner('La foudre !', `${m.name} est renvoyé·e en arrière`);
       say(`La foudre frappe ${m.name} ! Retour en arrière !`);
-      thunder();
+      noise(0.9, 700, 0.35);
       return true;
-    },
-    portage(live) {
-      const m = pickOne(live.slice(Math.ceil(live.length / 2)));
+    } },
+    portage: { w: 1, run(live, z1, z2) {
+      const m = pickOne(backHalf(live));
+      if (!m) return false;
       const ly = live[0].position.y, from = { ...m.position };
-      const p = findSpot(Math.max(from.y + 100, ly - 230), ly - 50);
+      const p = findSpot(Math.max(from.y + 100, ly - 230, z1), Math.min(ly - 50, z2));
       if (!p) return false;
-      ev.fx.push({ k: 'arc', x1: from.x, y1: from.y, x2: p.x, y2: p.y, t: performance.now() }, { k: 'ring', x: p.x, y: p.y, t: performance.now() });
+      ev.fx.push({ k: 'arc', x1: from.x, y1: from.y, x2: p.x, y2: p.y, t: now_() }, { k: 'ring', x: p.x, y: p.y, t: now_() });
       teleport(m, p);
       banner('Portage !', `${m.name} saute en avant en canot`);
       say(`Portage ! ${m.name} remonte jusqu’au peloton de tête !`);
       tone(300, 0.4, 'sine', 0.08, 0, 1200);
       return true;
-    },
-    castor(live) {
+    } },
+    castor: { w: 0.7, run(live, z1, z2) {
       if (ev.dam) return false;
       const y = live[0].position.y + 45;
-      if (y > course.finishY - 30 || marbles.some(o => Math.abs(o.position.y - y) < R + 10)) return false;
+      if (y > z2 || marbles.some(o => Math.abs(o.position.y - y) < R + 10)) return false;
       const body = Bodies.rectangle(450, y, 800, 14, { isStatic: true, friction: 0.02, restitution: 0.2, chamfer: { radius: 6 } });
       body.kind = 'dam';
       Composite.add(engine.world, body);
       course.parts.push(body);
-      ev.dam = { body, until: raceT + 3200 };
+      ev.dam = { body, until: raceT + 3000 };
       banner('Barrage de castor !', 'Le groupe de tête est bloqué');
       say(`Un castor bloque ${live[0].name} ! Le peloton revient…`);
       [0, 0.12, 0.24].forEach(w => tone(170, 0.06, 'square', 0.05, w));
       return true;
-    },
+    } },
+    embacle: { w: 1, run(live) {
+      const m = live[0];
+      if (m.isStatic) return false;
+      Body.setStatic(m, true);
+      m.frozenUntil = raceT + 2600;
+      banner('Embâcle !', `${m.name} est pris·e dans la glace`);
+      say(`Embâcle ! ${m.name} est gelé·e sur place, les autres la dépassent !`);
+      [0, 0.05, 0.1].forEach(w => tone(2400 - w * 6000, 0.08, 'triangle', 0.05, w));
+      return true;
+    } },
+    chasse: { w: 0.45, run(live, z1, z2) {
+      const m = live.at(-1), ly = live[0].position.y;
+      if (m.isStatic || live.length < 4) return false;
+      const from = { ...m.position };
+      const p = findSpot(ly + 30, Math.min(ly + 160, z2)) || findSpot(Math.max(z1, ly - 120), ly - 20);
+      if (!p) return false;
+      ev.fx.push({ k: 'arc', x1: from.x, y1: from.y, x2: p.x, y2: p.y, t: now_() }, { k: 'ring', x: p.x, y: p.y, t: now_() });
+      teleport(m, p);
+      banner('La chasse-galerie !', `${m.name}, dernier·ère, s’envole en canot volant`);
+      say(`La chasse-galerie ! ${m.name} passe de la dernière place à la tête !`);
+      [523, 659, 784].forEach((f, i) => tone(f, 0.2, 'sine', 0.07, i * 0.08));
+      return true;
+    } },
+    troc: { w: 0.8, run(live) {
+      const a = live[0], b = pickOne(backHalf(live));
+      if (!b || a.isStatic) return false;
+      const pa = { ...a.position }, pb = { ...b.position };
+      teleport(a, pb); teleport(b, pa);
+      ev.fx.push({ k: 'arc', x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, t: now_() }, { k: 'arc', x1: pb.x, y1: pb.y, x2: pa.x, y2: pa.y, t: now_() });
+      banner('Troc de fourrures !', `${a.name} et ${b.name} échangent leurs places`);
+      say(`Troc ! ${b.name} prend la place de ${a.name} !`);
+      tone(660, 0.12, 'square', 0.05); tone(440, 0.12, 'square', 0.05, 0.12);
+      return true;
+    } },
+    neige: { w: 1, run(live) {
+      const top = live.slice(0, 3).filter(m => !m.isStatic);
+      if (!top.length) return false;
+      for (const m of top) { m.frictionAir = 0.07; m.slowUntil = raceT + 3000; }
+      banner('Tempête de neige !', `Les ${top.length} premières billes avancent en raquettes`);
+      say(`Tempête de neige ! ${top.map(m => m.name).join(', ')} ralentissent !`);
+      noise(1.2, 2500, 0.08);
+      return true;
+    } },
+    envers: { w: 0.6, run() {
+      if (ev.gravUntil) return false;
+      engine.gravity.y = -0.55;
+      ev.gravUntil = raceT + 1300;
+      banner('Le monde à l’envers !', 'La gravité s’inverse un instant');
+      say('Le monde à l’envers ! Tout le monde remonte !');
+      tone(200, 0.6, 'sine', 0.07, 0, 900);
+      return true;
+    } },
   };
 
   function updateEvents() {
@@ -721,14 +909,32 @@ details .block { gap: 8px; }
       Composite.remove(engine.world, ev.dam.body);
       course.parts.splice(course.parts.indexOf(ev.dam.body), 1);
       ev.dam = null;
-      say('Le barrage cède !'); saidAt = performance.now();
+      say('Le barrage cède !'); saidAt = now_();
     }
+    for (const m of marbles) {
+      if (m.frozenUntil && raceT >= m.frozenUntil) { Body.setStatic(m, false); m.frozenUntil = 0; }
+      if (m.slowUntil && raceT >= m.slowUntil) { m.frictionAir = 0.0008; m.slowUntil = 0; }
+    }
+    if (ev.gravUntil && raceT >= ev.gravUntil) { engine.gravity.y = 1; ev.gravUntil = 0; }
     if (raceT < ev.next) return;
     ev.next = raceT + 600;
-    const live = marbles.filter(m => !m.done).sort((a, b) => b.position.y - a.position.y);
-    if (live.length < 3 || live[0].position.y > course.finishY - 40) return;
-    for (const k of shuffle(Object.keys(EVENTS).filter(k => k !== ev.last)))
-      if (EVENTS[k](live)) { ev.last = k; saidAt = performance.now(); ev.next = raceT + 2800 + rand() * 2200; return; }
+    const open = course.lock.removed;
+    // Before the lock opens, events only touch marbles still above it; after, only the second half
+    const [z1, z2] = open ? [course.lockY + 60, course.finishY - 30] : [300, course.lockTop - 30];
+    const live = marbles.filter(m => !m.done && (open ? m.position.y > course.lockY : m.position.y < course.lockTop))
+      .sort((a, b) => b.position.y - a.position.y);
+    if (live.length < 3 || live[0].position.y > z2) return;
+    let pool = Object.keys(EVENTS).filter(k => !ev.recent.includes(k));
+    while (pool.length) {
+      let r = rand() * pool.reduce((n, k) => n + EVENTS[k].w, 0);
+      const k = pool.find(k => (r -= EVENTS[k].w) < 0) || pool.at(-1);
+      pool = pool.filter(x => x !== k);
+      if (!EVENTS[k].run(live, z1, z2)) continue;
+      ev.recent = [...ev.recent, k].slice(-3);
+      saidAt = now_();
+      ev.next = raceT + (open ? 2200 + rand() * 1600 : 3500 + rand() * 2000);
+      return;
+    }
   }
 
   let bannerTimer = 0;
@@ -801,6 +1007,7 @@ details .block { gap: 8px; }
     Composite.remove(engine.world, course.gate);
     course.gate.removed = true;
     state = 'running'; saidAt = performance.now();
+    ev.next = raceT + 2500 + rand() * 1500;
     say('C’est parti !');
     await sleep(600);
     cd.hidden = true;
@@ -854,13 +1061,13 @@ details .block { gap: 8px; }
   }
   function tick() { const n = performance.now(); if (n - lastTick < 45) return; lastTick = n; tone(900 + rand() * 900, 0.04, 'sine', 0.025); }
   function boing() { const n = performance.now(); if (n - lastBoing < 90) return; lastBoing = n; tone(220, 0.25, 'triangle', 0.07, 0, 520); }
-  function thunder() {
+  function noise(dur, freq, vol) {
     const a = audio();
     if (!a) return;
-    const n = Math.floor(a.sampleRate * 0.9), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
+    const n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
     const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
-    src.buffer = buf; f.type = 'lowpass'; f.frequency.value = 700; g.gain.value = 0.35;
+    src.buffer = buf; f.type = 'lowpass'; f.frequency.value = freq; g.gain.value = vol;
     src.connect(f).connect(g).connect(a.destination); src.start();
   }
   function fanfare() { [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, i > 3 ? 0.4 : 0.16, 'triangle', 0.08, i * 0.13)); }
@@ -874,7 +1081,7 @@ details .block { gap: 8px; }
   const C = {};
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
-    for (const k of ['bg', 'surface', 'ink', 'muted', 'line', 'accent', 'gold', 'track', 'track-line', 'wood', 'wood-edge', 'peg', 'tree', 'spin', 'bump', 'water'])
+    for (const k of ['bg', 'surface', 'ink', 'muted', 'line', 'accent', 'gold', 'track', 'track-line', 'wood', 'wood-edge', 'peg', 'tree', 'spin', 'bump', 'water', 'ice'])
       C[k] = cs.getPropertyValue('--' + k).trim();
   }
   readColors();
@@ -908,19 +1115,32 @@ details .block { gap: 8px; }
     ctx.fillStyle = C['track-line'];
     ctx.fillText('DÉPART', W / 2, 36);
     ctx.font = '400 24px Bungee, "Arial Black", sans-serif';
-    for (const s of SECTIONS) if (s.y > top - 40 && s.y < bot + 40) ctx.fillText(s.title.toUpperCase(), W / 2, s.y);
-    ctx.strokeStyle = C['track-line']; ctx.lineWidth = 3;
-    for (let y = 3080 + course.D; y < 3570 + course.D; y += 62) {
-      if (y < top - 20 || y > bot + 20) continue;
-      ctx.beginPath();
-      for (let x = 50; x <= 850; x += 10) ctx.lineTo(x, y + Math.sin(x / 38 + t / 500 + y) * 6);
-      ctx.stroke();
+    for (const s of course.sections) if (s.y > top - 40 && s.y < bot + 40) ctx.fillText(s.title.toUpperCase(), W / 2, s.y);
+    for (const d of course.deco) {
+      if (d.k === 'rim') {
+        if (d.y + d.r < top || d.y - d.r > bot) continue;
+        circle(d.x, d.y, d.r); ctx.lineWidth = 6; ctx.strokeStyle = C['track-line']; ctx.stroke();
+        continue;
+      }
+      if (d.y2 < top - 20 || d.y1 > bot + 20) continue;
+      if (d.k === 'waves') {
+        ctx.strokeStyle = C['track-line']; ctx.lineWidth = 3;
+        for (let y = d.y1; y < d.y2; y += 62) {
+          ctx.beginPath();
+          for (let x = 50; x <= 850; x += 10) ctx.lineTo(x, y + Math.sin(x / 38 + t / 500 + y) * 6);
+          ctx.stroke();
+        }
+      } else if (d.k === 'water') {
+        ctx.strokeStyle = C.water; ctx.lineWidth = 3; ctx.setLineDash([18, 14]);
+        ctx.lineDashOffset = -(t / 20) % 32;
+        for (let x = 420; x <= 480; x += 12) { ctx.beginPath(); ctx.moveTo(x, d.y1); ctx.lineTo(x + Math.sin(x) * 4, d.y2); ctx.stroke(); }
+        ctx.setLineDash([]);
+      }
     }
-    if (bot > 3870 + course.D && top < course.finishY) {
-      ctx.strokeStyle = C.water; ctx.lineWidth = 3; ctx.setLineDash([18, 14]);
-      ctx.lineDashOffset = -(t / 20) % 32;
-      for (let x = 420; x <= 480; x += 12) { ctx.beginPath(); ctx.moveTo(x, 3880 + course.D); ctx.lineTo(x + Math.sin(x) * 4, course.finishY - 10); ctx.stroke(); }
-      ctx.setLineDash([]);
+    for (const c of course.cups) {
+      if (c.y < top - 80 || c.y > bot + 20) continue;
+      circle(c.x, c.y - 8, 9); ctx.fillStyle = c.at ? C.bump : C.peg; ctx.fill();
+      if (c.flash > 0) { circle(c.x, c.y - 40, 20 + (1 - c.flash) * 40); ctx.globalAlpha = c.flash; ctx.fillStyle = C.gold; ctx.fill(); ctx.globalAlpha = 1; }
     }
     const fy = course.finishY;
     if (fy > top - 60 && fy < bot + 60) {
@@ -935,9 +1155,31 @@ details .block { gap: 8px; }
 
   function drawStatics(top, bot) {
     for (const b of course.parts) {
-      if (b.removed || b.bounds.max.y < top - 30 || b.bounds.min.y > bot + 30) continue;
+      if (b.bounds.max.y < top - 30 || b.bounds.min.y > bot + 30) continue;
       const { x, y } = b.position;
+      if (b.kind === 'trap') {
+        path(b.vertices);
+        if (b.removed) { ctx.setLineDash([6, 6]); ctx.lineWidth = 2; ctx.strokeStyle = C['wood-edge']; ctx.stroke(); ctx.setLineDash([]); }
+        else { ctx.fillStyle = C.wood; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = C['wood-edge']; ctx.stroke(); circle(x - 38, y, 3); ctx.fillStyle = C.ink; ctx.fill(); }
+        continue;
+      }
+      if (b.removed) continue;
       switch (b.kind) {
+        case 'arm':
+          path(b.vertices); ctx.fillStyle = C.wood; ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = C['wood-edge']; ctx.stroke();
+          break;
+        case 'axle':
+          circle(x, y, b.circleRadius); ctx.fillStyle = C['wood-edge']; ctx.fill();
+          circle(x, y, 6); ctx.fillStyle = C.gold; ctx.fill();
+          break;
+        case 'cannon':
+          path(b.vertices); ctx.fillStyle = C.peg; ctx.fill();
+          break;
+        case 'ice':
+          path(b.vertices); ctx.fillStyle = C.ice; ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = C.surface; ctx.stroke();
+          break;
         case 'wall': case 'wood': case 'gate': case 'lock': {
           const gate = b.kind === 'gate' || b.kind === 'lock';
           path(b.vertices);
@@ -980,13 +1222,26 @@ details .block { gap: 8px; }
     }
   }
 
-  function drawMarbles(top, bot) {
+  function drawMarbles(top, bot, now) {
     for (const m of marbles) {
       const { x, y } = m.position;
       if (y < top - 30 || y > bot + 30) continue;
       const g = ctx.createRadialGradient(x - R * 0.35, y - R * 0.4, 1, x, y, R);
       g.addColorStop(0, m.light); g.addColorStop(0.45, m.color); g.addColorStop(1, m.dark);
       circle(x, y, R); ctx.fillStyle = g; ctx.fill();
+    }
+    for (const m of marbles) {
+      const { x, y } = m.position;
+      if (y < top - 30 || y > bot + 30) continue;
+      if (m.frozenUntil) {
+        ctx.beginPath(); ctx.roundRect(x - R - 7, y - R - 7, 2 * R + 14, 2 * R + 14, 5);
+        ctx.globalAlpha = 0.6; ctx.fillStyle = C.ice; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.lineWidth = 2; ctx.strokeStyle = C.surface; ctx.stroke();
+      }
+      if (m.slowUntil) {
+        ctx.fillStyle = C.ice;
+        for (let i = 0; i < 6; i++) { const a = now / 300 + i * 1.047; circle(x + Math.cos(a) * (R + 9), y + Math.sin(a) * (R + 9), 2.6); ctx.fill(); }
+      }
     }
     ctx.font = '700 13px "Atkinson Hyperlegible", system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
@@ -1035,7 +1290,7 @@ details .block { gap: 8px; }
     ctx.fillStyle = C.surface; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(mx - 3, my - 3, mw + 6, mh + 6, 6); ctx.fill(); ctx.stroke();
     ctx.fillStyle = C.ink; ctx.fillRect(mx, my + course.finishY * k, mw, 2);
-    if (!course.lock.removed) { ctx.fillStyle = C.accent; ctx.fillRect(mx, my + LOCK_Y * k, mw, 2); }
+    if (!course.lock.removed) { ctx.fillStyle = C.accent; ctx.fillRect(mx, my + course.lockY * k, mw, 2); }
     ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
     ctx.strokeRect(mx - 1, my + camY * k, mw + 2, Math.min(mh, v.viewH * k));
     for (const m of marbles) {
@@ -1108,7 +1363,7 @@ details .block { gap: 8px; }
     ctx.fillStyle = C.track; ctx.fillRect(0, top, W, v.viewH);
     drawDeco(now, top, bot);
     drawStatics(top, bot);
-    drawMarbles(top, bot);
+    drawMarbles(top, bot, now);
     drawEffects(now);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawMinimap(v);

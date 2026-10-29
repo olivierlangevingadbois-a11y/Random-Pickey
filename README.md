@@ -18,10 +18,11 @@ Speed (1×/2×/3×), 3D, sound and fullscreen toggles sit at the top right of th
 
 **3D run** (on by default): a real 3D marble race in the style of *Marble Race*. Marbles are spheres rolling through railed channels, spirals, conical funnels and tilted boards, bumping into each other in 3D. Each race strings together the start plate, two random sections, the lock, three more random sections and the final straight, linked by funnels:
 - le Chemin du Roy (stacked switchback channels), la tour Martello (a banked spiral around a tower), le tourbillon du Saint-Laurent (a wide bowl marbles circle down), la forêt boréale (a steep board planted with pines), les moulins à vent (a board with turning paddles), les rapides du Long-Sault (a board of kicking bumpers) and les trappes de la citadelle (trapdoors that flash, then drop).
-- The same twists apply, announced 3 seconds ahead. A broadcast camera follows the front of the pack at a fixed angle and cuts to a side-on photo-finish shot. A race clock and ▲▼ position changes sit above the standings.
+- Tracks keep marbles in: boards have glass lids, funnels have glass collars and exit tubes, and the vortex bowl has a tall rim. A marble that still escapes is put back on the track just behind its best point (about one marble every two races in tests).
+- The same twists apply, announced 3 seconds ahead. The broadcast camera aims at the weighted middle of the top five, slightly ahead of their motion, follows on a soft spring, keeps the leader near the middle of the frame, and glides into a side-on photo-finish view. A race clock and ▲▼ position changes sit above the standings.
 - The **3D** button switches to the classic flat run (2D). If a computer renders under 14 frames per second, the next race runs in 2D.
 
-The physics is a small purpose-built engine (sphere against boxes, capsules and funnel shells, plus marble-to-marble hits); three.js r160 renders it. Open the page with `#debug` to get `window.__race`, which steps the race without rendering (used for flow tests).
+The physics is a small purpose-built engine (sphere against boxes, capsules and funnel shells, plus marble-to-marble hits); three.js r160 renders it. Open the page with `#debug` to get `window.__race`, which steps the race without rendering and logs escaped marbles in `__race.E3.lost` (used for flow and containment tests).
 
 ## Privacy
 

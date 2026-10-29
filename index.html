@@ -1576,11 +1576,13 @@ details .block { gap: 8px; }
       lathes.push({ cx, cz, pts, mat: o.mat ?? FLOOR3[cur] });
     };
     const spawn = (p, f, nrm, w) => spawns.push({ p, prog: -p.y * PROG, f, n: nrm, w });
-    const hopper = O => rev(O.x, O.z, [[1.1, O.y + 0.6], [3.0, O.y + 2.0]], { mat: 'hopper' });
+    const hopper = O => { rev(O.x, O.z, [[1.1, O.y + 0.6], [3.4, O.y + 2.0]], { mat: 'hopper' }); rev(O.x, O.z, [[3.4, O.y + 2.0], [3.4, O.y + 2.8]], { mat: 'glass' }); };
+    // A short glass tube under a funnel hole stops spinning marbles from flying off sideways as they drop
+    const tube = (cx, cz, r, y) => rev(cx, cz, [[r, y], [r, y - 1.0]], { mat: 'glass' });
 
     // A U-channel along a polyline: floor plus glass side walls, optional back wall and end gap
     function channel(pts, o = {}) {
-      const w = o.w ?? 2.2, wh = o.wh ?? 1.0, th = 0.3, wt = 0.15;
+      const w = o.w ?? 2.2, wh = o.wh ?? 1.3, th = 0.3, wt = 0.15;
       let fr;
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], b = pts[i + 1], L = vlen(vsub(b, a)), mid = vlerp(a, b, 0.5);
@@ -1617,9 +1619,13 @@ details .block { gap: 8px; }
       wall(at(0, W / 2 + 0.08), at(L + 1.6, W / 2 + 0.08));
       wall(at(-0.08, -W / 2), at(-0.08, W / 2));
       wall(at(L + 1.6, -W / 2), at(L + 1.6, W / 2));
+      // Glass lid over everything past the drop-in zone, so kicks and paddles can't throw marbles out
+      box(at((2.0 + L + 1.6) / 2, 0, wh), [f, nrm, s], [(L + 1.6 - 2.0) / 2, 0.06, W / 2 + 0.16], { mat: 'glass' });
       for (let u = 1; u < L - 1; u += 1.5) spawn(at(u, 0, MR + 0.05), f, nrm, W);
       const X0 = at(L + 0.8, 0), yE = at(L, 0).y;
       rev(X0.x, X0.z, [[1.15, yE - 2.8], [W / 2 + 1.6, yE - 0.6]]);
+      tube(X0.x, X0.z, 1.15, yE - 2.8);
+      rev(X0.x, X0.z, [[W / 2 + 1.6, yE - 0.6], [W / 2 + 1.6, yE + 0.4]], { mat: 'glass' });
       return { at, f, s, n: nrm, exit: V(X0.x, yE - 3.8, X0.z) };
     }
 
@@ -1651,8 +1657,8 @@ details .block { gap: 8px; }
         const rad = 3.6, a0 = dir > 0 ? 0 : Math.PI, lead = 1 / rad, turns = 1.5, pts = [];
         const C0 = vadd(O, V(-rad * Math.cos(a0 + lead), 0, -rad * Math.sin(a0 + lead)));
         for (let a = 0; a <= turns * Math.PI * 2 + 1e-6; a += 0.3)
-          pts.push(V(C0.x + rad * Math.cos(a0 + a), O.y - 0.6 - 0.52 * (a - lead), C0.z + rad * Math.sin(a0 + a)));
-        const r = channel(pts, { back: true, end: 'gap', wh: 1.2, tilt: m => vmul(vnorm(V(m.x - C0.x, 0, m.z - C0.z)), -0.18) });
+          pts.push(V(C0.x + rad * Math.cos(a0 + a), O.y - 0.6 - 0.45 * (a - lead), C0.z + rad * Math.sin(a0 + a)));
+        const r = channel(pts, { back: true, end: 'gap', wh: 2, tilt: m => vmul(vnorm(V(m.x - C0.x, 0, m.z - C0.z)), -0.3) });
         cap(V(C0.x, pts.at(-1).y - 3, C0.z), V(C0.x, O.y - 1.6, C0.z), 2, { mat: 'brick', e: 0.2 });
         return r.exit;
       },
@@ -1661,8 +1667,16 @@ details .block { gap: 8px; }
         const S0 = vadd(O, V(-dir, -0.6, 0)), E = vadd(S0, V(dir * 6, -1.3, 0)), pts = [];
         for (let k = 0; k <= 6; k++) pts.push(vlerp(S0, E, k / 6));
         channel(pts, { back: true });
-        const C0 = vadd(E, V(0, -0.9, -4.4));
-        rev(C0.x, C0.z, [[0.95, C0.y - 2.6], [3.9, C0.y], [5.0, C0.y + 1.0]]);
+        const C0 = vadd(E, V(0, -1.9, -4.4));
+        rev(C0.x, C0.z, [[0.95, C0.y - 2.6], [3.9, C0.y], [6.2, C0.y + 1.55]]);
+        // A tall glass rim all round, open only where the entry channel passes over it
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 18) {
+          const P = V(C0.x + 6.35 * Math.cos(a + Math.PI / 36), C0.y + 2.5, C0.z + 6.35 * Math.sin(a + Math.PI / 36)), r = vsub(P, E);
+          if (Math.abs(r.z) < 1.9 && r.x * dir < 0.8) continue;
+          const tng = V(-Math.sin(a + Math.PI / 36), 0, Math.cos(a + Math.PI / 36));
+          box(P, [tng, UP, vcross(tng, UP)], [0.58, 1.0, 0.08], { mat: 'glass' });
+        }
+        tube(C0.x, C0.z, 0.95, C0.y - 2.6);
         for (const [rr, yy] of [[2.0, C0.y - 1.3], [3.3, C0.y - 0.5]])
           for (let a = 0; a < 6.28; a += Math.PI / 6) spawn(V(C0.x + rr * Math.cos(a), yy + 0.7, C0.z + rr * Math.sin(a)), null, UP, 1.5);
         return V(C0.x, C0.y - 3.6, C0.z);
@@ -1703,6 +1717,8 @@ details .block { gap: 8px; }
         for (const [c, h] of [[V(3.08, 0.45, 0), [0.08, 0.75, 2.6]], [V(-3.08, 0.45, 0), [0.08, 0.75, 2.6]], [V(0, 0.45, 2.63), [3.1, 0.75, 0.08]], [V(0, 0.45, -2.63), [3.1, 0.75, 0.08]]])
           box(vadd(T, c), [X, UP, Z], h, { mat: 'glass' });
         rev(T.x, T.z, [[1.1, T.y - 3.2], [4.4, T.y - 0.5]]);
+        tube(T.x, T.z, 1.1, T.y - 3.2);
+        rev(T.x, T.z, [[4.4, T.y - 0.5], [4.4, T.y - 0.32]], { mat: 'glass' });
         return V(T.x, T.y - 4.2, T.z);
       },
       lock(O) {
@@ -1711,6 +1727,7 @@ details .block { gap: 8px; }
         for (const [c, h] of [[V(2.58, 0.9, 0), [0.08, 1.05, 2.6]], [V(-2.58, 0.9, 0), [0.08, 1.05, 2.6]], [V(0, 0.9, 2.58), [2.6, 1.05, 0.08]], [V(0, 0.9, -2.58), [2.6, 1.05, 0.08]]])
           box(vadd(G0, c), [X, UP, Z], h, { mat: 'glass' });
         rev(G0.x, G0.z, [[1.15, G0.y - 3], [3.9, G0.y - 0.4]]);
+        tube(G0.x, G0.z, 1.15, G0.y - 3);
         for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) spawn(vadd(G0, V(i * 1.5, 0.7, j * 1.5)), null, UP, 1.4);
         E3.lockY = -G0.y * PROG; E3.lockTop = -(O.y + 0.2) * PROG; E3.lockLabel = vadd(G0, V(0, 2.4, 0));
         return V(G0.x, G0.y - 4, G0.z);
@@ -1848,6 +1865,7 @@ details .block { gap: 8px; }
     for (const m of marbles) {
       if (m.isStatic) continue;
       m.v.y -= g * dt;
+      if (g < 0 && m.v.y > 3) m.v.y = 3;
       const k = 1 - (m.slowUntil ? 3.5 : 0.1) * dt;
       m.v.x *= k; m.v.y *= k; m.v.z *= k;
       const sp = Math.hypot(m.v.x, m.v.y, m.v.z);
@@ -1931,6 +1949,7 @@ details .block { gap: 8px; }
       const lost = m.p.y < E3.lo.y - 4 || m.p.x < E3.lo.x - 4 || m.p.x > E3.hi.x + 4 || m.p.z < E3.lo.z - 4 || m.p.z > E3.hi.z + 4;
       if (!m.done && (lost || (m.v.y < -6 && !groundBelow(m.p)))) {
         const s = spawnNear(m.maxY - 40, { max: m.maxY }) || spawnNear(m.maxY);
+        (E3.lost ||= []).push({ at: course.sections.filter(x => x.y < m.maxY).at(-1)?.title, p: { ...m.p }, v: { ...m.v }, why: lost ? 'out' : 'void' });
         if (s) { place3(m, s); ev.fx.push({ k: 'ring3', p: { ...s.p }, t: now_() }); }
       }
       const sp = Math.hypot(m.v.x, m.v.y, m.v.z);
@@ -2069,8 +2088,8 @@ details .block { gap: 8px; }
     } },
     envers: { w: 0.6, run() {
       if (ev.gravUntil) return false;
-      E3.gravity = -0.35;
-      ev.gravUntil = raceT + 900;
+      E3.gravity = -0.2;
+      ev.gravUntil = raceT + 800;
       banner('Le monde à l’envers !', 'La gravité s’inverse un instant');
       say('Le monde à l’envers ! Tout le monde décolle !');
       tone(200, 0.6, 'sine', 0.07, 0, 900);
@@ -2230,28 +2249,42 @@ details .block { gap: 8px; }
     }
   }
 
-  // Broadcast camera: a fixed 3/4 angle from the front, following the front of the pack on a damped spring,
-  // with a hard cut to a side-on photo-finish shot near the line
+  // Broadcast camera: a fixed 3/4 angle from the front. It aims at the weighted middle of the top five (so a new
+  // leader or a teleport doesn't yank it), low-pass filters that aim, then follows it on a soft, speed-capped
+  // spring. Near the line it glides (no cut) to a side-on photo-finish view.
+  const CAM_W = [0.34, 0.24, 0.18, 0.13, 0.11];
   function camera3(dt, cw, ch) {
-    const cam = D3.camera;
+    const cam = D3.camera, t = Math.min(dt, 60) / 1000;
     cam.aspect = cw / ch;
     cam.updateProjectionMatrix();
-    let F = E3.startFocus, shot = 'start';
+    let aim = E3.startFocus, fin = 0;
     if (state !== 'idle' && state !== 'countdown') {
-      const live = marbles.filter(m => !m.done).sort((a, b) => b.prog - a.prog);
-      shot = 'race';
-      if (live.length) F = vlerp(live[Math.min(2, live.length - 1)].p, live[0].p, 0.65);
-      if (state !== 'running' || !live.length || live[0].prog > course.finishY - 260) { shot = 'finish'; F = E3.finishFocus; }
+      const live = marbles.filter(m => !m.done).sort((a, b) => b.prog - a.prog).slice(0, CAM_W.length);
+      if (live.length) {
+        let sw = 0;
+        aim = V();
+        // Aim slightly ahead along the pack's motion so the camera doesn't trail falling marbles
+        live.forEach((m, i) => { aim = vadd(vadd(aim, m.p, CAM_W[i]), m.v, CAM_W[i] * 0.3); sw += CAM_W[i]; });
+        aim = vmul(aim, 1 / sw);
+        // ...but never let the leader drift out of the middle of the frame
+        const keep = 0.28 * 2 * vlen(V(5, 6.5, 14)) * clamp(1.5 / Math.min(cam.aspect, 1.5), 1, 2.6) * Math.tan(cam.fov * Math.PI / 360);
+        const d = vsub(live[0].p, aim), L = vlen(d);
+        if (L > keep) aim = vadd(aim, d, 1 - keep / L);
+      }
+      fin = state !== 'running' || !live.length || live[0].prog > course.finishY - 320 ? 1 : 0;
     }
-    const cut = shot === 'finish' && D3.shot !== 'finish';
-    D3.shot = shot;
-    if (!D3.F || cut || reduceMotion.matches) { D3.F = { ...F }; D3.FV = V(); }
-    else {
-      const t = Math.min(dt, 50) / 1000, w = 2.6;
-      for (const q of ['x', 'y', 'z']) { D3.FV[q] = clamp(D3.FV[q] + (w * w * (F[q] - D3.F[q]) - 2 * w * D3.FV[q]) * t, -40, 40); D3.F[q] += D3.FV[q] * t; }
+    if (!D3.F || reduceMotion.matches) { D3.A = { ...aim }; D3.F = { ...aim }; D3.FV = V(); D3.fin = fin; }
+    // 1) smooth the aim point, 2) spring the camera focus toward it, 3) ease between race and finish framing
+    const k = 1 - Math.exp(-t / 0.3);
+    D3.A = vlerp(D3.A, aim, k);
+    D3.fin += clamp(fin - D3.fin, -t * 0.7, t * 0.7);
+    const e = D3.fin * D3.fin * (3 - 2 * D3.fin), goal = vlerp(D3.A, E3.finishFocus, e), w = 2.2;
+    for (const q of ['x', 'y', 'z']) {
+      D3.FV[q] = clamp(D3.FV[q] + (w * w * (goal[q] - D3.F[q]) - 2 * w * D3.FV[q]) * t, -20, 20);
+      D3.F[q] += D3.FV[q] * t;
     }
     const fit = clamp(1.5 / Math.min(cam.aspect, 1.5), 1, 2.6);
-    const off = vmul(shot === 'finish' ? E3.finishOff : V(5, 6.5, 14), fit);
+    const off = vmul(vlerp(V(5, 6.5, 14), E3.finishOff, e), fit);
     cam.position.set(D3.F.x + off.x, D3.F.y + off.y, D3.F.z + off.z);
     cam.lookAt(D3.F.x, D3.F.y - 0.4, D3.F.z);
     D3.sun.position.set(D3.F.x + 12, D3.F.y + 30, D3.F.z + 16);
@@ -2419,7 +2452,7 @@ details .block { gap: 8px; }
   }
 
   // Test hook: open the page with #debug to step the race from the console without rendering
-  if (location.hash === '#debug') window.__race = { E3, step: n => { for (let i = 0; i < n; i++) world3 ? simStep3() : simStep(); }, get marbles() { return marbles; }, get course() { return course; }, get state() { return state; }, get world3() { return world3; } };
+  if (location.hash === '#debug') window.__race = { E3, D3, P3: p => P3(p), get leader() { return leader; }, groundBelow: p => groundBelow(p), step: n => { for (let i = 0; i < n; i++) world3 ? simStep3() : simStep(); }, get marbles() { return marbles; }, get course() { return course; }, get state() { return state; }, get world3() { return world3; } };
 
   renderPanel();
   preview();

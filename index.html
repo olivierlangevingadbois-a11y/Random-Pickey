@@ -203,11 +203,13 @@ details .block { gap: 8px; }
   </header>
   <main>
     <section class="stage" id="stage" aria-label="Piste de la course">
+      <canvas id="gl" hidden></canvas>
       <canvas id="track"></canvas>
       <canvas id="fx"></canvas>
       <div class="hud hud-tl"><ol class="rank" id="rank" aria-live="off"></ol></div>
       <div class="hud hud-tr">
         <button class="pill" id="speed" type="button" title="Vitesse de la course">1×</button>
+        <button class="pill" id="view3d" type="button" aria-pressed="true" title="Vue en 3D">3D</button>
         <button class="pill" id="sound" type="button" aria-pressed="true" title="Effets sonores">Son</button>
         <button class="pill" id="fs" type="button" title="Plein écran">⛶</button>
       </div>
@@ -291,6 +293,8 @@ details .block { gap: 8px; }
 (() => {
   const $ = s => document.querySelector(s);
   const { Engine, Bodies, Body, Composite, Events, Query } = Matter;
+  // Rectangles remember their size so the 3D view can extrude them
+  const rectBody = (x, y, w, h, o) => Object.assign(Bodies.rectangle(x, y, w, h, o), { dims: { w, h } });
   const W = 900, R = 12, MAXN = 100, STEP = 1000 / 60, VMAX = 14;
   const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
@@ -312,7 +316,7 @@ details .block { gap: 8px; }
   if (!groups.some(g => g.name === current)) current = groups[0].name;
   let excluded = store.get('excluded', {});
   let picked = store.get('picked', {});
-  const opts = Object.assign({ removeWinner: true, speed: 1, sound: true }, store.get('opts', {}));
+  const opts = Object.assign({ removeWinner: true, speed: 1, sound: true, view3d: true }, store.get('opts', {}));
   const save = () => { store.set('groups', groups); store.set('current', current); store.set('excluded', excluded); store.set('picked', picked); store.set('opts', opts); };
 
   const keyOf = s => s.last + '|' + s.first;
@@ -503,14 +507,14 @@ details .block { gap: 8px; }
     const add = (b, kind) => { b.kind = kind; parts.push(b); return b; };
     const seg = (x1, y1, x2, y2, t = 16, kind = 'wood') => {
       x1 = X(x1); x2 = X(x2);
-      return add(Bodies.rectangle((x1 + x2) / 2, (y1 + y2) / 2, Math.hypot(x2 - x1, y2 - y1), t,
+      return add(rectBody((x1 + x2) / 2, (y1 + y2) / 2, Math.hypot(x2 - x1, y2 - y1), t,
         { ...base, angle: Math.atan2(y2 - y1, x2 - x1), chamfer: { radius: t / 2 - 1 } }), kind);
     };
     const peg = (x, y, r = 7, kind = 'peg') => add(Bodies.circle(X(x), y, r, { ...base, restitution: 0.6 }), kind);
     const spread = y => { for (let x = 110; x < 820; x += 115) peg(x, y, 8); };
     const spinner = (x, y, len) => {
       const w = (0.025 + rand() * 0.02) * (rand() < 0.5 ? -1 : 1);
-      const b = add(Bodies.rectangle(X(x), y, len, 12, { ...base, angle: rand() * Math.PI, chamfer: { radius: 5 } }), 'spin');
+      const b = add(rectBody(X(x), y, len, 12, { ...base, angle: rand() * Math.PI, chamfer: { radius: 5 } }), 'spin');
       kin.push(() => { Body.setAngle(b, b.angle + w); Body.setAngularVelocity(b, w); });
       peg(x, y, 10, 'hub');
     };
@@ -553,8 +557,8 @@ details .block { gap: 8px; }
         seg(40, y + 90, 235, y + 170); seg(860, y + 90, 665, y + 170);
         const cx = 450, cy = y + 330, L = 185, w = 0.016 * (mir ? -1 : 1), sg = Math.sign(w), arms = [];
         for (let i = 0; i < 6; i++) {
-          const arm = add(Bodies.rectangle(cx, cy, L, 12, { ...base, friction: 0.08, chamfer: { radius: 5 } }), 'arm');
-          const lip = add(Bodies.rectangle(cx, cy, 40, 10, { ...base, chamfer: { radius: 4 } }), 'arm');
+          const arm = add(rectBody(cx, cy, L, 12, { ...base, friction: 0.08, chamfer: { radius: 5 } }), 'arm');
+          const lip = add(rectBody(cx, cy, 40, 10, { ...base, chamfer: { radius: 4 } }), 'arm');
           arms.push({ arm, lip, a0: i * Math.PI / 3 });
         }
         peg(cx, cy, 18, 'axle');
@@ -591,7 +595,7 @@ details .block { gap: 8px; }
         spread(y + 30);
         const rows = [[y + 150, [[250, 260], [650, 260]]], [y + 320, [[160, 200], [450, 200], [740, 200]]], [y + 490, [[250, 260], [650, 260]]]];
         for (const [yy, ps] of rows) for (const [x, len] of ps) {
-          const b = add(Bodies.rectangle(X(x), yy, len, 12, { ...base, friction: 0, restitution: 0.15, chamfer: { radius: 5 } }), 'ice');
+          const b = add(rectBody(X(x), yy, len, 12, { ...base, friction: 0, restitution: 0.15, chamfer: { radius: 5 } }), 'ice');
           const A = 0.35 + rand() * 0.25, om = 0.02 + rand() * 0.025, ph = rand() * 6.28;
           let t = 0;
           kin.push(() => { t++; const a = A * Math.sin(om * t + ph), prev = b.angle; Body.setAngle(b, a); Body.setAngularVelocity(b, a - prev); });
@@ -603,7 +607,7 @@ details .block { gap: 8px; }
         spread(y + 30);
         const fy = y + 200, tiles = [];
         for (let i = 0; i < 8; i++) {
-          const b = add(Bodies.rectangle(100 + i * 100, fy, 100, 14, { ...base }), 'trap');
+          const b = add(rectBody(100 + i * 100, fy, 100, 14, { ...base }), 'trap');
           b.until = 1500 + rand() * 2500;
           tiles.push(b);
         }
@@ -673,14 +677,14 @@ details .block { gap: 8px; }
       const p = slots[i];
       const b = Bodies.circle(p.x, p.y, R, { restitution: 0.45, friction: 0.004, frictionAir: 0.0008, density: 0.0016 });
       const h = Math.round((hue0 + i * 137.508) % 360);
-      Object.assign(b, { kind: 'marble', student: s, name: labs[i], color: `hsl(${h} 74% 54%)`, dark: `hsl(${h} 70% 30%)`, light: `hsl(${h} 90% 82%)`, still: 0, done: false, maxY: p.y });
+      Object.assign(b, { kind: 'marble', h, student: s, name: labs[i], color: `hsl(${h} 74% 54%)`, dark: `hsl(${h} 70% 30%)`, light: `hsl(${h} 90% 82%)`, still: 0, done: false, maxY: p.y });
       return b;
     });
     Composite.add(engine.world, marbles);
     Events.on(engine, 'collisionStart', onCollide);
     finishOrder = []; raceT = 0; camY = 0; leader = lastLeader = null; sectionIdx = -1;
     Object.assign(lk, { firstAt: 0, arrived: 0, need: 0 });
-    Object.assign(ev, { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0 });
+    Object.assign(ev, { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0, cine: null });
   }
 
   function onCollide(ev) {
@@ -767,6 +771,7 @@ details .block { gap: 8px; }
     Composite.remove(engine.world, L);
     L.removed = true;
     banner('L’écluse s’ouvre !', 'Tout le monde repart en même temps');
+    cine({ x: 450, y: course.lockY });
     say('L’écluse s’ouvre ! Tout est à refaire !'); saidAt = now;
     tone(392, 0.18, 'triangle', 0.08); tone(523, 0.3, 'triangle', 0.08, 0.16);
     ev.next = raceT + 1200 + rand() * 1000;
@@ -788,6 +793,7 @@ details .block { gap: 8px; }
       noise(0.35, 500, 0.3);
       if (inside.includes(leader) && performance.now() - saidAt > 800) {
         say(`Boum ! La batterie royale renvoie ${leader.name} dans les airs !`); saidAt = performance.now();
+        cine(leader);
       }
     }
   }
@@ -801,7 +807,9 @@ details .block { gap: 8px; }
     }
     return null;
   }
-  function teleport(m, p) { Body.setPosition(m, p); Body.setVelocity(m, { x: 0, y: 0 }); m.still = 0; m.maxY = p.y; }
+  function teleport(m, p) { Body.setPosition(m, p); Body.setVelocity(m, { x: 0, y: 0 }); m.still = 0; m.maxY = p.y; cine(m); }
+  // Ask the 3D camera to swoop in on a marble (or a point) for a moment
+  function cine(m) { ev.cine = { m: m.position ? m : null, x: m.x, y: m.y, until: performance.now() + 1500 }; }
   const now_ = () => performance.now();
   const backHalf = live => live.slice(Math.ceil(live.length / 2)).filter(m => !m.isStatic);
 
@@ -840,11 +848,12 @@ details .block { gap: 8px; }
       if (ev.dam) return false;
       const y = live[0].position.y + 45;
       if (y > z2 || marbles.some(o => Math.abs(o.position.y - y) < R + 10)) return false;
-      const body = Bodies.rectangle(450, y, 800, 14, { isStatic: true, friction: 0.02, restitution: 0.2, chamfer: { radius: 6 } });
+      const body = rectBody(450, y, 800, 14, { isStatic: true, friction: 0.02, restitution: 0.2, chamfer: { radius: 6 } });
       body.kind = 'dam';
       Composite.add(engine.world, body);
       course.parts.push(body);
       ev.dam = { body, until: raceT + 3000 };
+      cine(live[0]);
       banner('Barrage de castor !', 'Le groupe de tête est bloqué');
       say(`Un castor bloque ${live[0].name} ! Le peloton revient…`);
       [0, 0.12, 0.24].forEach(w => tone(170, 0.06, 'square', 0.05, w));
@@ -855,6 +864,7 @@ details .block { gap: 8px; }
       if (m.isStatic) return false;
       Body.setStatic(m, true);
       m.frozenUntil = raceT + 2600;
+      cine(m);
       banner('Embâcle !', `${m.name} est pris·e dans la glace`);
       say(`Embâcle ! ${m.name} est gelé·e sur place, les autres la dépassent !`);
       [0, 0.05, 0.1].forEach(w => tone(2400 - w * 6000, 0.08, 'triangle', 0.05, w));
@@ -1031,6 +1041,7 @@ details .block { gap: 8px; }
     e.preventDefault(); hideWin(); startRace();
   });
   $('#speed').onclick = () => { opts.speed = opts.speed === 1 ? 2 : opts.speed === 2 ? 3 : 1; save(); renderPanel(); };
+  $('#view3d').onclick = () => { opts.view3d = !opts.view3d; D3.slowOk = opts.view3d; save(); if (opts.view3d) load3D(); render3DButton(); };
   $('#sound').onclick = () => { opts.sound = !opts.sound; save(); renderPanel(); };
   $('#fs').onclick = () => {
     const st = $('#stage');
@@ -1079,10 +1090,13 @@ details .block { gap: 8px; }
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let dpr = 1;
   const C = {};
+  // 3D renderer state (see the 3D view section below)
+  const D3 = { ready: false, failed: false, loading: false, built: null, meshes: new Map(), anim: [] };
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
     for (const k of ['bg', 'surface', 'ink', 'muted', 'line', 'accent', 'gold', 'track', 'track-line', 'wood', 'wood-edge', 'peg', 'tree', 'spin', 'bump', 'water', 'ice'])
       C[k] = cs.getPropertyValue('--' + k).trim();
+    D3.built = null;
   }
   readColors();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
@@ -1345,6 +1359,314 @@ details .block { gap: 8px; }
     fx.parts = fx.parts.filter(p => p.life > 0 && p.y < fxc.clientHeight + 40);
   }
 
+  // ---------- 3D view ----------
+  // Three.js draws the same 2D physics with depth: the track is a 50-unit-deep slab, marbles roll at z = 0.
+  const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js';
+  const DEPTH = 50;
+  const glc = $('#gl');
+  function load3D() {
+    if (D3.ready || D3.loading || D3.failed) return;
+    D3.loading = true;
+    const s = document.createElement('script');
+    s.src = THREE_URL;
+    s.onload = () => { D3.loading = false; init3D(); };
+    s.onerror = () => { D3.loading = false; D3.failed = true; render3DButton(); };
+    document.head.append(s);
+  }
+  function init3D() {
+    try {
+      D3.r = new THREE.WebGLRenderer({ canvas: glc, antialias: true });
+    } catch { D3.failed = true; render3DButton(); return; }
+    D3.r.shadowMap.enabled = true;
+    D3.r.shadowMap.type = THREE.PCFSoftShadowMap;
+    D3.scene = new THREE.Scene();
+    D3.camera = new THREE.PerspectiveCamera(42, 1, 10, 8000);
+    D3.hemi = new THREE.HemisphereLight(0xffffff, 0x556070, 2.2);
+    D3.sun = new THREE.DirectionalLight(0xffffff, 2.6);
+    D3.sun.castShadow = true;
+    D3.sun.shadow.mapSize.set(1024, 1024);
+    Object.assign(D3.sun.shadow.camera, { left: -620, right: 620, top: 620, bottom: -620, near: 10, far: 2500 });
+    D3.scene.add(D3.hemi, D3.sun, D3.sun.target);
+    D3.tmp = new THREE.Vector3();
+    D3.ready = true;
+    render3DButton();
+  }
+  function render3DButton() {
+    const b = $('#view3d');
+    b.hidden = D3.failed;
+    b.setAttribute('aria-pressed', !!opts.view3d && !D3.failed);
+  }
+
+  const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.65, metalness: 0.05, ...extra });
+  function dispose(obj) {
+    obj.traverse(o => {
+      o.geometry?.dispose();
+      for (const m of [].concat(o.material || [])) { m.map?.dispose(); m.dispose(); }
+    });
+  }
+  function canvasTex(w, h, draw) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+  // Text painted on the back wall; size is the cap height in world units
+  function wallText(text, y, size, color, opacity = 0.55) {
+    const k = 4, font = `400 ${size * k}px Bungee, "Arial Black", sans-serif`;
+    const probe = document.createElement('canvas').getContext('2d');
+    probe.font = font;
+    const w = Math.ceil(probe.measureText(text).width + size * k), h = Math.ceil(size * k * 1.6);
+    const map = canvasTex(w, h, (x) => { x.font = font; x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, w / 2, h / 2); });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w / k, h / k), new THREE.MeshBasicMaterial({ map, transparent: true, opacity, depthWrite: false }));
+    m.position.set(0, -y, -DEPTH / 2 + 0.3);
+    return m;
+  }
+  function checker(w, h, cell) {
+    return canvasTex(Math.round(w / cell) * 8, Math.round(h / cell) * 8, (x, cw, ch) => {
+      for (let i = 0; i < cw / 8; i++) for (let j = 0; j < ch / 8; j++) { x.fillStyle = (i + j) % 2 ? C.ink : C.surface; x.fillRect(i * 8, j * 8, 8, 8); }
+    });
+  }
+
+  function makeMesh(b) {
+    const M = D3.M;
+    let m;
+    if (b.circleRadius) {
+      const r = b.circleRadius;
+      if (b.kind === 'tree') {
+        m = new THREE.Group();
+        for (const [z, s] of [[0, 1], [-17, 0.8]]) {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(11 * s, 26 * s, 10), M.tree);
+          cone.position.set(0, 4, z);
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 8, 6), M.trunk);
+          trunk.position.set(0, -11 * s, z);
+          m.add(cone, trunk);
+        }
+      } else if (b.kind === 'bump') {
+        m = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, DEPTH * 0.8, 32), mat(C.bump, { emissive: new THREE.Color(C.gold), emissiveIntensity: 0, roughness: 0.3 }));
+        body.rotation.x = Math.PI / 2;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 0.62, 2.5, 8, 32), M.white);
+        ring.position.z = DEPTH * 0.4 + 0.5;
+        m.add(body, ring);
+        m.userData.glow = body.material;
+      } else {
+        m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, DEPTH, 16), b.kind === 'axle' || b.kind === 'hub' ? M.trunk : M.peg);
+        m.rotation.x = Math.PI / 2;
+      }
+    } else {
+      const { w, h } = b.dims;
+      const material = { gate: M.accent, lock: M.accent, spin: M.spin, ice: M.ice, cannon: M.cannon, dam: M.trunk }[b.kind] || M.wood;
+      m = new THREE.Mesh(new THREE.BoxGeometry(w, h, b.kind === 'arm' ? DEPTH * 0.8 : DEPTH), material);
+    }
+    m.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
+    return m;
+  }
+
+  function build3D() {
+    if (D3.group) { D3.scene.remove(D3.group); dispose(D3.group); }
+    const g = D3.group = new THREE.Group();
+    D3.scene.add(g);
+    D3.scene.background = new THREE.Color(C.bg);
+    D3.meshes = new Map();
+    D3.anim = [];
+    D3.M = {
+      wood: mat(C.wood), trunk: mat(C['wood-edge']), peg: mat(C.peg, { metalness: 0.4, roughness: 0.35 }),
+      tree: mat(C.tree), spin: mat(C.spin), accent: mat(C.accent), white: mat(C.surface),
+      ice: mat(C.ice, { transparent: true, opacity: 0.8, roughness: 0.08 }), cannon: mat(C.peg, { metalness: 0.7, roughness: 0.3 }),
+    };
+    const H = course.H;
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(W + 2000, H + 2400), mat(C.track, { roughness: 0.95 }));
+    wall.position.set(0, -H / 2 + 300, -DEPTH / 2 - 1);
+    wall.receiveShadow = true;
+    g.add(wall);
+    const band = mat(C['track-line'], { roughness: 0.95 });
+    course.sections.forEach((s, i) => {
+      const y1 = s.y - 12, y2 = course.sections[i + 1] ? course.sections[i + 1].y - 12 : course.finishY;
+      if (i % 2 === 0) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(800, y2 - y1), band);
+        p.position.set(0, -(y1 + y2) / 2, -DEPTH / 2 - 0.5);
+        p.receiveShadow = true;
+        g.add(p);
+      }
+      g.add(wallText(s.title.toUpperCase(), s.y + 6, 22, C.muted));
+    });
+    g.add(wallText('DÉPART', 40, 30, C.muted));
+    const fy = course.finishY;
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(800, 16), new THREE.MeshBasicMaterial({ map: checker(800, 16, 8) }));
+    strip.position.set(0, -fy, -DEPTH / 2 + 0.4);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(800, DEPTH), new THREE.MeshBasicMaterial({ map: checker(800, DEPTH, 8), transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -fy, 0);
+    g.add(strip, floor, wallText('ARRIVÉE', fy + 46, 30, C.ink, 0.9));
+    for (const d of course.deco) {
+      if (d.k === 'rim') {
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(d.r, 4, 8, 72), D3.M.trunk);
+        rim.position.set(d.x - 450, -d.y, -DEPTH / 2 + 3);
+        g.add(rim);
+      } else {
+        const water = d.k === 'water';
+        const map = canvasTex(256, 256, (x) => {
+          x.strokeStyle = water ? C.water : C['track-line']; x.lineWidth = water ? 10 : 8;
+          for (let i = 0; i < 4; i++) {
+            x.beginPath();
+            if (water) { x.moveTo(i * 64 + 32, 0); x.lineTo(i * 64 + 32, 150); }
+            else for (let u = 0; u <= 256; u += 8) x.lineTo(u, i * 64 + 32 + Math.sin(u / 256 * Math.PI * 4) * 10);
+            x.stroke();
+          }
+        });
+        map.wrapS = map.wrapT = THREE.RepeatWrapping;
+        const w = water ? 70 : 800, h = d.y2 - d.y1;
+        map.repeat.set(w / 256 * (water ? 4 : 1), h / 256);
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map, transparent: true, opacity: 0.7, depthWrite: false }));
+        p.position.set(0, -(d.y1 + d.y2) / 2, -DEPTH / 2 + 0.2);
+        g.add(p);
+        D3.anim.push({ map, dx: water ? 0 : 0.00006, dy: water ? 0.0012 : 0 });
+      }
+    }
+    const geo = new THREE.SphereGeometry(R, 28, 18);
+    for (const m of marbles) {
+      const map = canvasTex(128, 64, (x) => {
+        x.fillStyle = `hsl(${m.h} 74% 50%)`; x.fillRect(0, 0, 128, 64);
+        x.strokeStyle = `hsl(${m.h} 95% 82%)`; x.lineWidth = 6;
+        for (let i = 0; i < 3; i++) {
+          x.beginPath();
+          for (let u = 0; u <= 128; u += 4) x.lineTo(u, 32 + Math.sin(u / 128 * Math.PI * 2 * (i + 1) + i * 2) * (8 + i * 7));
+          x.stroke();
+        }
+      });
+      m.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map, roughness: 0.15, metalness: 0.1 }));
+      m.mesh.castShadow = true;
+      g.add(m.mesh);
+    }
+    D3.built = course;
+  }
+
+  function sync3D() {
+    const seen = new Set();
+    for (const b of course.parts) {
+      let m = D3.meshes.get(b);
+      if (!m) { m = makeMesh(b); D3.meshes.set(b, m); D3.group.add(m); }
+      seen.add(b);
+      m.visible = !b.removed;
+      m.position.set(b.position.x - 450, -b.position.y, 0);
+      if (!b.circleRadius) m.rotation.z = -b.angle;
+      if (m.userData.glow) m.userData.glow.emissiveIntensity = b.flash * 1.4;
+    }
+    for (const [b, m] of D3.meshes) if (!seen.has(b)) { D3.group.remove(m); dispose(m); D3.meshes.delete(b); }
+    for (const m of marbles) { m.mesh.position.set(m.position.x - 450, -m.position.y, 0); m.mesh.rotation.z = -m.angle; }
+    for (const a of D3.anim) { a.map.offset.x += a.dx * 16; a.map.offset.y += a.dy * 16; }
+  }
+
+  // Follows the leader, swoops in on twists, and closes in on the finish line
+  function camera3D(dt, now, cw, ch) {
+    const cam = D3.camera;
+    cam.aspect = cw / ch;
+    cam.updateProjectionMatrix();
+    const tanH = Math.tan(cam.fov * Math.PI / 360);
+    const base = clamp(400 / (tanH * cam.aspect), 480, 2600);
+    let tx = 450, ty = 260, d = base * 1.05, lift = 170;
+    const c = ev.cine && now < ev.cine.until ? ev.cine : null;
+    if (state === 'running' && leader) { tx = 450 + (leader.position.x - 450) * 0.5; ty = leader.position.y + 90; d = base; }
+    if (c && state === 'running') { const p = c.m ? c.m.position : c; tx = p.x; ty = p.y; d = base * 0.55; lift = 70; }
+    if (state === 'finish' && finishOrder[0]) { tx = finishOrder[0].position.x; ty = Math.min(finishOrder[0].position.y, course.finishY + 60); d = base * 0.5; lift = 30; }
+    if (state === 'done' || state === 'over') { ty = course.finishY - 20; d = base * 0.75; lift = 60; }
+    const sway = reduceMotion.matches ? 0 : Math.sin(now / 3500) * 0.2 * d;
+    const want = [tx - 450 + sway, -ty + lift, d], look = [tx - 450, -ty, 0];
+    const k = reduceMotion.matches ? 1 : 1 - Math.exp(-dt / (c || state === 'finish' ? 160 : 260));
+    D3.cp ||= want.slice(); D3.lp ||= look.slice();
+    for (let i = 0; i < 3; i++) { D3.cp[i] += (want[i] - D3.cp[i]) * k; D3.lp[i] += (look[i] - D3.lp[i]) * k; }
+    cam.position.set(...D3.cp);
+    cam.lookAt(...D3.lp);
+    D3.sun.position.set(D3.lp[0] + 260, D3.lp[1] + 480, 650);
+    D3.sun.target.position.set(D3.lp[0], D3.lp[1], 0);
+    D3.tanH = tanH; D3.cw = cw; D3.ch = ch;
+    const visH = 2 * D3.cp[2] * tanH;
+    camY = -D3.lp[1] - visH / 2;
+    return visH;
+  }
+
+  // World point → screen point, with s = screen pixels per world unit at that depth
+  function P(x, y, z = 0) {
+    const v = D3.tmp.set(x - 450, -y, z);
+    const dist = v.distanceTo(D3.camera.position);
+    v.project(D3.camera);
+    return { x: (v.x + 1) / 2 * D3.cw, y: (1 - v.y) / 2 * D3.ch, s: D3.ch / (2 * D3.tanH * dist) };
+  }
+  const onScreen = p => p.x > -60 && p.x < D3.cw + 60 && p.y > -40 && p.y < D3.ch + 40;
+
+  // Names, crown, ice, snow and twist effects drawn flat over the 3D scene
+  function drawOverlay3D(now) {
+    for (const c of course.cups) {
+      const p = P(c.x, c.y - 8, DEPTH / 2);
+      if (!onScreen(p)) continue;
+      if (c.at) { ctx.beginPath(); ctx.arc(p.x, p.y, 7 * p.s, 0, 7); ctx.fillStyle = C.bump; ctx.fill(); }
+      if (c.flash > 0) { ctx.globalAlpha = c.flash; ctx.beginPath(); ctx.arc(p.x, p.y - 30 * p.s, (20 + (1 - c.flash) * 40) * p.s, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); ctx.globalAlpha = 1; }
+    }
+    if (!course.lock.removed && lk.firstAt) {
+      const p = P(450, course.lockY, DEPTH / 2);
+      if (onScreen(p)) {
+        ctx.font = `700 ${clamp(12 * p.s, 10, 20)}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = C.surface;
+        ctx.fillText(`ÉCLUSE  ${lk.arrived} / ${lk.need}`, p.x, p.y);
+      }
+    }
+    for (const m of marbles) {
+      const { x, y } = m.position, p = P(x, y);
+      if (!onScreen(p)) continue;
+      if (m.frozenUntil) {
+        const s = (R + 7) * p.s;
+        ctx.beginPath(); ctx.roundRect(p.x - s, p.y - s, 2 * s, 2 * s, 5);
+        ctx.globalAlpha = 0.55; ctx.fillStyle = C.ice; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.lineWidth = 2; ctx.strokeStyle = C.surface; ctx.stroke();
+      }
+      if (m.slowUntil) {
+        ctx.fillStyle = C.surface;
+        for (let i = 0; i < 6; i++) { const a = now / 300 + i * 1.047; ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * (R + 9) * p.s, p.y + Math.sin(a) * (R + 9) * p.s, 2.8, 0, 7); ctx.fill(); }
+      }
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.lineJoin = 'round'; ctx.strokeStyle = C.track;
+    for (const m of marbles) {
+      const p = P(m.position.x, m.position.y + R + 2, R);
+      if (!onScreen(p)) continue;
+      const f = clamp(13 * p.s, 9, 24);
+      ctx.font = `700 ${f}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+      ctx.lineWidth = f / 3;
+      ctx.strokeText(m.name, p.x, p.y);
+      ctx.fillStyle = m === leader && state === 'running' ? C.accent : C.ink;
+      ctx.fillText(m.name, p.x, p.y);
+    }
+    const crownFor = finishOrder[0] || (state === 'running' ? leader : null);
+    if (crownFor) {
+      const p = P(crownFor.position.x, crownFor.position.y - R - 6, R), s = p.s;
+      ctx.fillStyle = C.gold;
+      ctx.beginPath();
+      [[-10, 0], [-10, -10], [-5, -5], [0, -13], [5, -5], [10, -10], [10, 0]].forEach(([dx, dy], i) => ctx[i ? 'lineTo' : 'moveTo'](p.x + dx * s, p.y + dy * s));
+      ctx.closePath(); ctx.fill();
+    }
+    ev.fx = ev.fx.filter(f => now - f.t < 900);
+    for (const f of ev.fx) {
+      const a = 1 - (now - f.t) / 900;
+      ctx.globalAlpha = a;
+      if (f.k === 'bolt') {
+        const pts = f.pts.map(q => P(q.x, q.y));
+        for (const [w, c] of [[9, C.gold], [3, C.surface]]) {
+          ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y));
+          ctx.lineWidth = w; ctx.strokeStyle = c; ctx.stroke();
+        }
+      } else if (f.k === 'ring') {
+        const p = P(f.x, f.y);
+        ctx.beginPath(); ctx.arc(p.x, p.y, (R + (1 - a) * 46) * p.s, 0, 7); ctx.lineWidth = 4; ctx.strokeStyle = C.gold; ctx.stroke();
+      } else if (f.k === 'arc') {
+        const p1 = P(f.x1, f.y1), p2 = P(f.x2, f.y2), pc = P((f.x1 + f.x2) / 2 + 160, (f.y1 + f.y2) / 2, 120);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.quadraticCurveTo(pc.x, pc.y, p2.x, p2.y);
+        ctx.setLineDash([10, 10]); ctx.lineWidth = 4; ctx.strokeStyle = C.accent; ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   let last = performance.now(), acc = 0;
   function frame(now) {
     const dt = Math.min(100, now - last);
@@ -1355,6 +1677,34 @@ details .block { gap: 8px; }
       while (acc >= STEP) { simStep(); acc -= STEP; }
     }
     const v = view();
+    const use3D = opts.view3d && D3.ready;
+    glc.hidden = !use3D;
+    if (use3D) {
+      const size = `${v.cw}x${v.ch}@${dpr}`;
+      if (D3.size !== size) { D3.size = size; D3.r.setPixelRatio(Math.min(dpr, 1.5)); D3.r.setSize(v.cw, v.ch, false); }
+      if (D3.built !== course) build3D();
+      sync3D();
+      const visH = camera3D(dt, now, v.cw, v.ch);
+      D3.r.render(D3.scene, D3.camera);
+      // A classroom computer that can't keep up drops back to 2D for this visit
+      D3.perf ||= { t0: now, n: 0 };
+      if (dt > 250 || document.hidden) D3.perf = { t0: now, n: 0 };
+      else if (++D3.perf.n && now - D3.perf.t0 > 4000) {
+        if (D3.perf.n * 1000 / (now - D3.perf.t0) < 14 && !D3.slowOk) {
+          opts.view3d = false; render3DButton();
+          say('Vue 2D activée : cet ordinateur est trop lent pour la 3D. Le bouton 3D la remet.');
+        }
+        D3.perf = { t0: now, n: 0 };
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, v.cw, v.ch);
+      drawOverlay3D(now);
+      drawMinimap({ ...v, viewH: visH });
+      renderRank(now);
+      drawFx(dt);
+      requestAnimationFrame(frame);
+      return;
+    }
     updateCamera(v);
     const top = camY, bot = camY + v.viewH;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1374,6 +1724,8 @@ details .block { gap: 8px; }
 
   renderPanel();
   preview();
+  render3DButton();
+  if (opts.view3d) load3D();
   requestAnimationFrame(frame);
 })();
 </script>

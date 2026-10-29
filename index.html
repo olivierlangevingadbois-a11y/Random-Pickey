@@ -498,7 +498,7 @@ details .block { gap: 8px; }
 
   // ---------- Course ----------
   // Every race assembles a new track: 2 random sections, the lock, 3 more random sections, then the falls.
-  const LOCK_SHARE = 0.8, LOCK_WAIT = 6500;
+  const LOCK_SHARE = 0.8, LOCK_WAIT = 5000;
   const MODULES = {
     foret: { title: 'La forêt boréale', say: 'traverse la forêt boréale en tête' },
     chemin: { title: 'Le Chemin du Roy', say: 'file sur le Chemin du Roy' },
@@ -675,6 +675,15 @@ details .block { gap: 8px; }
   const ev = { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0, pending: null };
 
   function buildWorld(list) {
+    if (opts.view3d && D3.ready) buildWorld3(list); else buildWorld2(list);
+  }
+  function resetRace() {
+    finishOrder = []; raceT = 0; camY = 0; leader = lastLeader = null; sectionIdx = -1;
+    Object.assign(lk, { firstAt: 0, arrived: 0, need: 0 });
+    Object.assign(ev, { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0, pending: null });
+  }
+  function buildWorld2(list) {
+    world3 = false;
     engine = Engine.create();
     engine.gravity.y = 1;
     engine.positionIterations = 10;
@@ -696,9 +705,7 @@ details .block { gap: 8px; }
     });
     Composite.add(engine.world, marbles);
     Events.on(engine, 'collisionStart', onCollide);
-    finishOrder = []; raceT = 0; camY = 0; leader = lastLeader = null; sectionIdx = -1;
-    Object.assign(lk, { firstAt: 0, arrived: 0, need: 0 });
-    Object.assign(ev, { next: Infinity, recent: [], fx: [], dam: null, flash: 0, gravUntil: 0, pending: null });
+    resetRace();
   }
 
   function onCollide(ev) {
@@ -782,7 +789,7 @@ details .block { gap: 8px; }
     if (arrived !== lk.arrived && now - saidAt > 1200) { say(`L’écluse est fermée : ${arrived} / ${lk.need} billes arrivées…`); saidAt = now; }
     lk.arrived = arrived;
     if (!lk.firstAt || (arrived < lk.need && raceT - lk.firstAt < LOCK_WAIT)) return;
-    Composite.remove(engine.world, L);
+    if (!world3) Composite.remove(engine.world, L);
     L.removed = true;
     banner('L’écluse s’ouvre !', 'Tout le monde repart en même temps');
     say('L’écluse s’ouvre ! Tout est à refaire !'); saidAt = now;
@@ -955,16 +962,16 @@ details .block { gap: 8px; }
 
   function updateEvents() {
     if (ev.dam && raceT >= ev.dam.until) {
-      Composite.remove(engine.world, ev.dam.body);
-      course.parts.splice(course.parts.indexOf(ev.dam.body), 1);
+      if (world3) E3.X.splice(E3.X.indexOf(ev.dam.body), 1);
+      else { Composite.remove(engine.world, ev.dam.body); course.parts.splice(course.parts.indexOf(ev.dam.body), 1); }
       ev.dam = null;
       say('Le barrage cède !'); saidAt = now_();
     }
     for (const m of marbles) {
-      if (m.frozenUntil && raceT >= m.frozenUntil) { Body.setStatic(m, false); m.frozenUntil = 0; }
+      if (m.frozenUntil && raceT >= m.frozenUntil) { if (world3) m.isStatic = false; else Body.setStatic(m, false); m.frozenUntil = 0; }
       if (m.slowUntil && raceT >= m.slowUntil) { m.frictionAir = 0.0008; m.slowUntil = 0; }
     }
-    if (ev.gravUntil && raceT >= ev.gravUntil) { engine.gravity.y = 1; ev.gravUntil = 0; }
+    if (ev.gravUntil && raceT >= ev.gravUntil) { if (world3) E3.gravity = 1; else engine.gravity.y = 1; ev.gravUntil = 0; }
     const open = course.lock.removed;
     // Before the lock opens, events only touch marbles still above it; after, only the second half
     const [z1, z2] = open ? [course.lockY + 60, course.finishY - 30] : [300, course.lockTop - 30];
@@ -981,7 +988,7 @@ details .block { gap: 8px; }
       }
       if (raceT < pend.at) return;
       ev.pending = null;
-      const ok = live.length >= 3 && live[0].position.y <= z2 && EVENTS[pend.k].run(live, z1, z2, pend);
+      const ok = live.length >= 3 && live[0].position.y <= z2 && (world3 ? EVENTS3 : EVENTS)[pend.k].run(live, z1, z2, pend);
       if (!ok) { banner('Raté !', 'Le coup de théâtre tombe à l’eau'); say('Raté ! Personne n’est touché.'); }
       ev.recent = [...ev.recent, pend.k].slice(-3);
       saidAt = now_();
@@ -1119,7 +1126,7 @@ details .block { gap: 8px; }
       if (n === 'Go !') break;
       await sleep(750);
     }
-    Composite.remove(engine.world, course.gate);
+    if (!world3) Composite.remove(engine.world, course.gate);
     course.gate.removed = true;
     state = 'running'; saidAt = performance.now(); raceGo = raceT;
     ev.next = raceT + 2500 + rand() * 1500;
@@ -1146,7 +1153,11 @@ details .block { gap: 8px; }
     e.preventDefault(); hideWin(); startRace();
   });
   $('#speed').onclick = () => { opts.speed = opts.speed === 1 ? 2 : opts.speed === 2 ? 3 : 1; save(); renderPanel(); };
-  $('#view3d').onclick = () => { opts.view3d = !opts.view3d; D3.slowOk = opts.view3d; save(); if (opts.view3d) load3D(); render3DButton(); };
+  $('#view3d').onclick = () => {
+    opts.view3d = !opts.view3d; D3.slowOk = opts.view3d; save(); render3DButton();
+    if (opts.view3d && !D3.ready) return load3D();
+    if (['idle', 'over'].includes(state) && $('#win').hidden) preview(); else say('La vue changera à la prochaine course.');
+  };
   $('#sound').onclick = () => { opts.sound = !opts.sound; save(); renderPanel(); };
   $('#fs').onclick = () => {
     const st = $('#stage');
@@ -1380,7 +1391,7 @@ details .block { gap: 8px; }
   function drawEffects(now) {
     ev.fx = ev.fx.filter(f => now - f.t < 900);
     for (const f of ev.fx) {
-      const a = 1 - (now - f.t) / 900;
+      const a = clamp(1 - (now - f.t) / 900, 0, 1);
       ctx.globalAlpha = a;
       if (f.k === 'bolt') {
         for (const [w, c] of [[9, C.gold], [3, C.surface]]) {
@@ -1467,9 +1478,8 @@ details .block { gap: 8px; }
   }
 
   // ---------- 3D view ----------
-  // Three.js draws the same 2D physics with depth: the track is a 50-unit-deep slab, marbles roll at z = 0.
+  // Three.js renders the 3D marble run (see below); the flat run stays as the fallback.
   const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js';
-  const DEPTH = 50;
   const glc = $('#gl');
   function load3D() {
     if (D3.ready || D3.loading || D3.failed) return;
@@ -1497,6 +1507,7 @@ details .block { gap: 8px; }
     D3.tmp = new THREE.Vector3();
     D3.ready = true;
     render3DButton();
+    if (opts.view3d && state === 'idle') preview();
   }
   function render3DButton() {
     const b = $('#view3d');
@@ -1519,276 +1530,843 @@ details .block { gap: 8px; }
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   }
-  // Text painted on the back wall; size is the cap height in world units
-  function wallText(text, y, size, color, opacity = 0.55) {
-    const k = 4, font = `400 ${size * k}px Bungee, "Arial Black", sans-serif`;
-    const probe = document.createElement('canvas').getContext('2d');
-    probe.font = font;
-    const w = Math.ceil(probe.measureText(text).width + size * k), h = Math.ceil(size * k * 1.6);
-    const map = canvasTex(w, h, (x) => { x.font = font; x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, w / 2, h / 2); });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w / k, h / k), new THREE.MeshBasicMaterial({ map, transparent: true, opacity, depthWrite: false }));
-    m.position.set(0, -y, -DEPTH / 2 + 0.3);
-    return m;
-  }
-  function checker(w, h, cell) {
-    return canvasTex(Math.round(w / cell) * 8, Math.round(h / cell) * 8, (x, cw, ch) => {
-      for (let i = 0; i < cw / 8; i++) for (let j = 0; j < ch / 8; j++) { x.fillStyle = (i + j) % 2 ? C.ink : C.surface; x.fillRect(i * 8, j * 8, 8, 8); }
-    });
+  const onScreen = p => !p.back && p.x > -60 && p.x < cv.clientWidth + 60 && p.y > -40 && p.y < cv.clientHeight + 40;
+
+  // ---------- 3D marble run ----------
+  // A real 3D race: marbles are spheres rolling through channels, spirals, funnels and boards. A small
+  // purpose-built engine handles sphere vs boxes, capsules and funnel shells, plus marble-to-marble hits.
+  // Units: a marble is 1 wide. "Progress" is height dropped × PROG, so the shared race logic can rank marbles.
+  const MR = 0.5, G3 = 30, SUB = 2, DT3 = STEP / 1000 / SUB, PROG = 40, V3MAX = 20;
+  const E3 = { S: [], K: [], X: [], grid: new Map(), spawns: [], tiles: [], bumps: [], gravity: 1 };
+  let world3 = false;
+  const V = (x = 0, y = 0, z = 0) => ({ x, y, z });
+  const vadd = (a, b, s = 1) => V(a.x + b.x * s, a.y + b.y * s, a.z + b.z * s);
+  const vsub = (a, b) => V(a.x - b.x, a.y - b.y, a.z - b.z);
+  const vmul = (a, s) => V(a.x * s, a.y * s, a.z * s);
+  const vdot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+  const vcross = (a, b) => V(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+  const vlen = a => Math.hypot(a.x, a.y, a.z);
+  const vnorm = a => vmul(a, 1 / (vlen(a) || 1));
+  const vlerp = (a, b, t) => vadd(vmul(a, 1 - t), b, t);
+  const UP = V(0, 1, 0);
+  // Rotate v around the unit axis k by angle t
+  const vrot = (v, k, t) => vadd(vadd(vmul(v, Math.cos(t)), vcross(k, v), Math.sin(t)), k, vdot(k, v) * (1 - Math.cos(t)));
+
+  const MODULES3 = {
+    depart: { title: 'Départ', say: 'prend le meilleur départ' },
+    chemin: { title: 'Le Chemin du Roy', say: 'file sur le Chemin du Roy' },
+    tour: { title: 'La tour Martello', say: 'dévale la tour Martello en spirale' },
+    tourbillon: { title: 'Le tourbillon du Saint-Laurent', say: 'mène la ronde dans le tourbillon' },
+    foret: { title: 'La forêt boréale', say: 'slalome en tête dans la forêt boréale' },
+    moulins: { title: 'Les moulins à vent', say: 'esquive les moulins à vent' },
+    rapides: { title: 'Les rapides du Long-Sault', say: 'saute les rapides du Long-Sault' },
+    trappes: { title: 'Les trappes de la citadelle', say: 'tombe sur les trappes de la citadelle' },
+    lock: { title: 'L’écluse de Lachine', say: 'arrive en tête à l’écluse de Lachine' },
+    arrivee: { title: 'La dernière ligne droite', say: 'entre dans la dernière ligne droite' },
+  };
+  const FLOOR3 = { depart: 'accent', chemin: 'wood', tour: 'brick', tourbillon: 'water', foret: 'moss', moulins: 'wood', rapides: 'water', trappes: 'wood', lock: 'accent', arrivee: 'wood' };
+
+  function buildCourse3(n) {
+    const S = [], K = [], spawns = [], sections = [], lathes = [], signs = [], tiles = [], bumps = [];
+    let cur = 'depart';
+    const box = (c, ax, h, o = {}) => { const b = { t: 'box', c, ax, h, e: 0.15, f: 0.03, mat: FLOOR3[cur], ...o }; S.push(b); return b; };
+    const cap = (a, b, r, o = {}) => { const c = { t: 'cap', a, b, r, ll: vdot(vsub(b, a), vsub(b, a)), e: 0.5, f: 0.02, mat: 'peg', ...o }; S.push(c); return c; };
+    const rev = (cx, cz, pts, o = {}) => {
+      for (let i = 0; i < pts.length - 1; i++) S.push({ t: 'rev', cx, cz, a: pts[i], b: pts[i + 1], th: 0.16, e: 0.1, f: 0.02 });
+      lathes.push({ cx, cz, pts, mat: o.mat ?? FLOOR3[cur] });
+    };
+    const spawn = (p, f, nrm, w) => spawns.push({ p, prog: -p.y * PROG, f, n: nrm, w });
+    const hopper = O => rev(O.x, O.z, [[1.1, O.y + 0.6], [3.0, O.y + 2.0]], { mat: 'hopper' });
+
+    // A U-channel along a polyline: floor plus glass side walls, optional back wall and end gap
+    function channel(pts, o = {}) {
+      const w = o.w ?? 2.2, wh = o.wh ?? 1.0, th = 0.3, wt = 0.15;
+      let fr;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1], L = vlen(vsub(b, a)), mid = vlerp(a, b, 0.5);
+        const f = vnorm(vsub(b, a)), up = o.tilt ? vnorm(vadd(UP, o.tilt(mid))) : UP;
+        const s = vnorm(vcross(f, up)), nrm = vcross(s, f), ext = L / 2 + 0.05;
+        fr = { f, s, n: nrm };
+        box(vadd(mid, nrm, -th / 2), [f, nrm, s], [ext, th / 2, w / 2 + wt]);
+        for (const side of [-1, 1]) box(vadd(vadd(mid, s, side * (w / 2 + wt / 2)), nrm, (wh - th) / 2), [f, nrm, s], [ext, (wh + th) / 2, wt / 2], { mat: 'glass' });
+        spawn(vadd(mid, nrm, MR + 0.05), f, nrm, w);
+        if (i === 0 && o.back) box(vadd(vadd(a, f, -wt / 2), nrm, (wh - th) / 2), [f, nrm, s], [wt / 2, (wh + th) / 2, w / 2 + wt], { mat: 'glass' });
+      }
+      const E = pts.at(-1), { f, s, n: nrm } = fr;
+      if (o.end !== 'gap') return { end: E, f, s, n: nrm };
+      // Floor stops, the walls carry on to an end wall: marbles drop straight down through the gap
+      const gap = 1.4;
+      for (const side of [-1, 1]) box(vadd(vadd(vadd(E, f, gap / 2), s, side * (w / 2 + wt / 2)), nrm, (wh - th) / 2), [f, nrm, s], [gap / 2, (wh + th) / 2, wt / 2], { mat: 'glass' });
+      box(vadd(vadd(E, f, gap + wt / 2), nrm, (wh - th) / 2), [f, nrm, s], [wt / 2, (wh + th) / 2, w / 2 + wt], { mat: 'glass' });
+      return { end: E, f, s, n: nrm, exit: vadd(vadd(E, f, gap / 2), UP, -1) };
+    }
+
+    // An inclined board: floor, glass sides and back, and a catch wall past the open bottom edge.
+    // Marbles drop off the full width into a wide conical funnel (a flat V would let them jam in an arch).
+    function board(A, d, o) {
+      const { L, W, slope } = o, th = 0.3, wh = o.wh ?? 1.4;
+      const f = vnorm(V(d.x * Math.cos(slope), -Math.sin(slope), d.z * Math.cos(slope)));
+      const s = vnorm(vcross(f, UP)), nrm = vcross(s, f);
+      const at = (u, v, h = 0) => vadd(vadd(vadd(A, f, u), s, v), nrm, h);
+      const wall = (p1, p2) => {
+        const fv = vnorm(vsub(p2, p1));
+        box(vadd(vlerp(p1, p2, 0.5), nrm, (wh - th) / 2), [fv, nrm, vcross(fv, nrm)], [vlen(vsub(p2, p1)) / 2 + 0.05, (wh + th) / 2, 0.08], { mat: 'glass' });
+      };
+      box(at(L / 2, 0, -th / 2), [f, nrm, s], [L / 2, th / 2, W / 2]);
+      wall(at(0, -W / 2 - 0.08), at(L + 1.6, -W / 2 - 0.08));
+      wall(at(0, W / 2 + 0.08), at(L + 1.6, W / 2 + 0.08));
+      wall(at(-0.08, -W / 2), at(-0.08, W / 2));
+      wall(at(L + 1.6, -W / 2), at(L + 1.6, W / 2));
+      for (let u = 1; u < L - 1; u += 1.5) spawn(at(u, 0, MR + 0.05), f, nrm, W);
+      const X0 = at(L + 0.8, 0), yE = at(L, 0).y;
+      rev(X0.x, X0.z, [[1.15, yE - 2.8], [W / 2 + 1.6, yE - 0.6]]);
+      return { at, f, s, n: nrm, exit: V(X0.x, yE - 3.8, X0.z) };
+    }
+
+    const B = {
+      depart(O, dir) {
+        const rows = Math.ceil(n / 9), gateU = 0.6 + rows * 1.15 + 0.4;
+        const b = board(O, V(dir, 0, 0), { L: gateU + 7, W: 10.4, slope: 0.12 });
+        E3.gate = box(b.at(gateU, 0, 0.45), [b.f, b.n, b.s], [0.12, 0.75, 5.2], { mat: 'gate', dyn: true });
+        const slots = [];
+        for (let r = 0; r < rows; r++) for (let c = 0; c < 9; c++) slots.push(b.at(0.8 + r * 1.15, -4.6 + c * 1.15, MR + 0.02));
+        E3.slots = shuffle(slots);
+        E3.startFocus = b.at(gateU / 2 + 1, 0);
+        return b.exit;
+      },
+      // Stacked channels that switch back and forth, dropping from one to the next
+      chemin(O, dir) {
+        let S0 = vadd(O, V(-dir, -0.6, 0)), d = dir, r;
+        for (let i = 0; i < 3; i++) {
+          const E = vadd(S0, V(d * 10, -1.9, 0)), pts = [];
+          for (let k = 0; k <= 6; k++) pts.push(vlerp(S0, E, k / 6));
+          r = channel(pts, { back: true, end: 'gap' });
+          S0 = vadd(r.exit, V(d * 0.75, -0.8, 0));
+          d = -d;
+        }
+        return r.exit;
+      },
+      // A banked channel spiralling down around a brick tower
+      tour(O, dir) {
+        const rad = 3.6, a0 = dir > 0 ? 0 : Math.PI, lead = 1 / rad, turns = 1.5, pts = [];
+        const C0 = vadd(O, V(-rad * Math.cos(a0 + lead), 0, -rad * Math.sin(a0 + lead)));
+        for (let a = 0; a <= turns * Math.PI * 2 + 1e-6; a += 0.3)
+          pts.push(V(C0.x + rad * Math.cos(a0 + a), O.y - 0.6 - 0.52 * (a - lead), C0.z + rad * Math.sin(a0 + a)));
+        const r = channel(pts, { back: true, end: 'gap', wh: 1.2, tilt: m => vmul(vnorm(V(m.x - C0.x, 0, m.z - C0.z)), -0.18) });
+        cap(V(C0.x, pts.at(-1).y - 3, C0.z), V(C0.x, O.y - 1.6, C0.z), 2, { mat: 'brick', e: 0.2 });
+        return r.exit;
+      },
+      // A channel feeds a wide bowl tangentially; marbles circle down to the hole in the middle
+      tourbillon(O, dir) {
+        const S0 = vadd(O, V(-dir, -0.6, 0)), E = vadd(S0, V(dir * 6, -1.3, 0)), pts = [];
+        for (let k = 0; k <= 6; k++) pts.push(vlerp(S0, E, k / 6));
+        channel(pts, { back: true });
+        const C0 = vadd(E, V(0, -0.9, -4.4));
+        rev(C0.x, C0.z, [[0.95, C0.y - 2.6], [3.9, C0.y], [5.0, C0.y + 1.0]]);
+        for (const [rr, yy] of [[2.0, C0.y - 1.3], [3.3, C0.y - 0.5]])
+          for (let a = 0; a < 6.28; a += Math.PI / 6) spawn(V(C0.x + rr * Math.cos(a), yy + 0.7, C0.z + rr * Math.sin(a)), null, UP, 1.5);
+        return V(C0.x, C0.y - 3.6, C0.z);
+      },
+      // A steep board planted with pine trees
+      foret(O, dir) {
+        const b = board(vadd(O, V(-1.2 * dir, -0.6, 0)), V(dir, 0, 0), { L: 14, W: 9, slope: 0.36 });
+        for (let r = 0, u = 2.2; u < 11.6; r++, u += 1.35)
+          for (let v = r % 2 ? -1.8 : -2.7; v <= 2.71; v += 1.8) cap(b.at(u, v, 0), b.at(u, v, 1.2), 0.2, { mat: 'tree' });
+        return b.exit;
+      },
+      // Paddles turning over the board bat marbles around
+      moulins(O, dir) {
+        const b = board(vadd(O, V(-1.2 * dir, -0.6, 0)), V(dir, 0, 0), { L: 14, W: 9, slope: 0.28 });
+        for (const [u, v] of [[4, -1.8], [7.5, 1.8], [11, -1.2]]) {
+          const o = b.at(u, v, 0.42);
+          K.push({ t: 'box', kin: true, o, c: o, k: b.n, base: b.f, th: rand() * 6.28, w: (2 + rand()) * (rand() < 0.5 ? -1 : 1), h: [1.7, 0.4, 0.13], ax: [b.f, b.n, b.s], e: 0.3, f: 0.05, mat: 'spin', rad: 1.8 });
+        }
+        for (const [u, v] of [[2, 0], [9.2, -3], [9.2, 3]]) cap(b.at(u, v, 0), b.at(u, v, 1), 0.22);
+        return b.exit;
+      },
+      // Bouncy bumpers that kick marbles away
+      rapides(O, dir) {
+        const b = board(vadd(O, V(-1.2 * dir, -0.6, 0)), V(dir, 0, 0), { L: 14, W: 9, slope: 0.3 });
+        for (const [u, v] of [[3.5, -2], [3.5, 2], [6.5, 0], [9, -2.6], [9, 2.6], [11.4, 0]])
+          bumps.push(cap(b.at(u, v, 0), b.at(u, v, 1.1), 0.75, { mat: 'bump', kick: 6, flash: 0 }));
+        return b.exit;
+      },
+      // A floor of trapdoors over a bowl; tiles flash red, then drop open at random
+      trappes(O, dir) {
+        const T = vadd(O, V(dir * 1.2, -0.9, 0)), X = V(1, 0, 0), Z = V(0, 0, 1);
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+          const t = box(vadd(T, V(-2.25 + i * 1.5, -0.125, -1.7 + j * 1.7)), [X, UP, Z], [0.74, 0.125, 0.84], { mat: 'wood', dyn: true, trap: true });
+          t.until = 1500 + rand() * 2500;
+          tiles.push(t);
+          spawn(vadd(t.c, UP, 0.7), null, UP, 1.4);
+        }
+        for (const [c, h] of [[V(3.08, 0.45, 0), [0.08, 0.75, 2.6]], [V(-3.08, 0.45, 0), [0.08, 0.75, 2.6]], [V(0, 0.45, 2.63), [3.1, 0.75, 0.08]], [V(0, 0.45, -2.63), [3.1, 0.75, 0.08]]])
+          box(vadd(T, c), [X, UP, Z], h, { mat: 'glass' });
+        rev(T.x, T.z, [[1.1, T.y - 3.2], [4.4, T.y - 0.5]]);
+        return V(T.x, T.y - 4.2, T.z);
+      },
+      lock(O) {
+        const G0 = vadd(O, V(0, -1.2, 0)), X = V(1, 0, 0), Z = V(0, 0, 1);
+        E3.lockGate = box(G0, [X, UP, Z], [2.5, 0.15, 2.5], { mat: 'gate', dyn: true });
+        for (const [c, h] of [[V(2.58, 0.9, 0), [0.08, 1.05, 2.6]], [V(-2.58, 0.9, 0), [0.08, 1.05, 2.6]], [V(0, 0.9, 2.58), [2.6, 1.05, 0.08]], [V(0, 0.9, -2.58), [2.6, 1.05, 0.08]]])
+          box(vadd(G0, c), [X, UP, Z], h, { mat: 'glass' });
+        rev(G0.x, G0.z, [[1.15, G0.y - 3], [3.9, G0.y - 0.4]]);
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) spawn(vadd(G0, V(i * 1.5, 0.7, j * 1.5)), null, UP, 1.4);
+        E3.lockY = -G0.y * PROG; E3.lockTop = -(O.y + 0.2) * PROG; E3.lockLabel = vadd(G0, V(0, 2.4, 0));
+        return V(G0.x, G0.y - 4, G0.z);
+      },
+      arrivee(O, dir) {
+        const S0 = vadd(O, V(-dir, -0.6, 0)), E = vadd(S0, V(dir * 16, -2.4, 0)), pts = [];
+        for (let k = 0; k <= 8; k++) pts.push(vlerp(S0, E, k / 8));
+        const r = channel(pts, { back: true, w: 2.6 });
+        const Fp = vlerp(S0, E, 11 / 16);
+        E3.finishLine = { p: Fp, f: r.f, s: r.s, n: r.n, w: 2.6 };
+        E3.finishY = -(Fp.y + MR) * PROG;
+        E3.finishFocus = vadd(Fp, UP, 0.5);
+        E3.finishOff = vadd(vmul(r.s.z > 0 ? r.s : vmul(r.s, -1), 9), V(-dir * 2, 3, 0));
+        // A walled basin catches everyone after the line
+        const Bc = vadd(E, V(dir * 3.5, -1.6, 0)), X = V(1, 0, 0), Z = V(0, 0, 1);
+        box(Bc, [X, UP, Z], [4, 0.15, 3.5]);
+        for (const [c, h] of [[V(4.08, 0.9, 0), [0.08, 1.05, 3.6]], [V(-4.08, 0.9, 0), [0.08, 1.05, 3.6]], [V(0, 0.9, 3.58), [4.1, 1.05, 0.08]], [V(0, 0.9, -3.58), [4.1, 1.05, 0.08]]])
+          box(vadd(Bc, c), [X, UP, Z], h, { mat: 'glass' });
+        E3.bottom = Bc.y - 0.2;
+        return Bc;
+      },
+    };
+
+    const pool = shuffle(['chemin', 'tour', 'tourbillon', 'foret', 'moulins', 'rapides', 'trappes']);
+    const plan = ['depart', ...pool.slice(0, 2), 'lock', ...pool.slice(2, 5), 'arrivee'];
+    let O = V(0, 0, 0), dir = 1;
+    for (const k of plan) {
+      cur = k;
+      if (k !== 'depart') hopper(O);
+      sections.push({ y: k === 'depart' ? -1e9 : -O.y * PROG - 20, ...MODULES3[k] });
+      signs.push({ text: MODULES3[k].title, p: vadd(O, V(0, 3.4, -3.2)) });
+      const exit = B[k](O, dir);
+      O = V(exit.x, exit.y - 2.6, exit.z);
+      dir = -dir;
+    }
+    spawns.sort((a, b) => a.prog - b.prog);
+    Object.assign(E3, { S, K, X: [], spawns, tiles, bumps, lathes, signs, gravity: 1 });
+    // Static colliders go in a coarse grid so each marble only tests what is near it
+    let lo = V(1e9, 1e9, 1e9), hi = V(-1e9, -1e9, -1e9);
+    E3.grid = new Map();
+    for (const c of S) {
+      const bb = aabb3(c);
+      lo = V(Math.min(lo.x, bb[0]), Math.min(lo.y, bb[1]), Math.min(lo.z, bb[2]));
+      hi = V(Math.max(hi.x, bb[3]), Math.max(hi.y, bb[4]), Math.max(hi.z, bb[5]));
+      for (let i = Math.floor(bb[0] / CELL3); i <= Math.floor(bb[3] / CELL3); i++)
+        for (let j = Math.floor(bb[1] / CELL3); j <= Math.floor(bb[4] / CELL3); j++)
+          for (let k = Math.floor(bb[2] / CELL3); k <= Math.floor(bb[5] / CELL3); k++) {
+            const key = ckey(i, j, k);
+            (E3.grid.get(key) || E3.grid.set(key, []).get(key)).push(c);
+          }
+    }
+    E3.lo = lo; E3.hi = hi;
+    const lock = E3.lockGate;
+    return {
+      sections, cups: [], parts: [], kin: [], deco: [], gate: E3.gate, lock,
+      lockY: E3.lockY, lockTop: E3.lockTop, finishY: E3.finishY, H: -E3.bottom * PROG,
+    };
   }
 
-  function makeMesh(b) {
-    const M = D3.M;
-    let m;
-    if (b.circleRadius) {
-      const r = b.circleRadius;
-      if (b.kind === 'tree') {
-        m = new THREE.Group();
-        for (const [z, s] of [[0, 1], [-17, 0.8]]) {
-          const cone = new THREE.Mesh(new THREE.ConeGeometry(11 * s, 26 * s, 10), M.tree);
-          cone.position.set(0, 4, z);
-          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 8, 6), M.trunk);
-          trunk.position.set(0, -11 * s, z);
-          m.add(cone, trunk);
-        }
-      } else if (b.kind === 'bump') {
-        m = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, DEPTH * 0.8, 32), mat(C.bump, { emissive: new THREE.Color(C.gold), emissiveIntensity: 0, roughness: 0.3 }));
-        body.rotation.x = Math.PI / 2;
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 0.62, 2.5, 8, 32), M.white);
-        ring.position.z = DEPTH * 0.4 + 0.5;
-        m.add(body, ring);
-        m.userData.glow = body.material;
-      } else {
-        m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, DEPTH, 16), b.kind === 'axle' || b.kind === 'hub' ? M.trunk : M.peg);
-        m.rotation.x = Math.PI / 2;
-      }
+  const CELL3 = 3, ckey = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
+  function aabb3(c) {
+    if (c.t === 'box') {
+      const e = ['x', 'y', 'z'].map(q => c.ax.reduce((s, a, i) => s + Math.abs(a[q]) * c.h[i], 0));
+      return [c.c.x - e[0], c.c.y - e[1], c.c.z - e[2], c.c.x + e[0], c.c.y + e[1], c.c.z + e[2]];
+    }
+    if (c.t === 'cap') return [Math.min(c.a.x, c.b.x) - c.r, Math.min(c.a.y, c.b.y) - c.r, Math.min(c.a.z, c.b.z) - c.r, Math.max(c.a.x, c.b.x) + c.r, Math.max(c.a.y, c.b.y) + c.r, Math.max(c.a.z, c.b.z) + c.r];
+    const r = Math.max(c.a[0], c.b[0]) + c.th;
+    return [c.cx - r, Math.min(c.a[1], c.b[1]) - c.th, c.cz - r, c.cx + r, Math.max(c.a[1], c.b[1]) + c.th, c.cz + r];
+  }
+
+  // ---------- 3D physics ----------
+  function resolve3(m, nx, ny, nz, pen, col, cvx = 0, cvy = 0, cvz = 0) {
+    m.p.x += nx * pen; m.p.y += ny * pen; m.p.z += nz * pen;
+    if (ny > 0.3) m.gn = V(nx, ny, nz);
+    let rx = m.v.x - cvx, ry = m.v.y - cvy, rz = m.v.z - cvz;
+    const vn = rx * nx + ry * ny + rz * nz;
+    if (vn >= 0) return;
+    const jn = -(1 + (vn < -2.5 ? col.e : 0)) * vn;
+    rx += nx * jn; ry += ny * jn; rz += nz * jn;
+    const vn2 = rx * nx + ry * ny + rz * nz, tx = rx - nx * vn2, ty = ry - ny * vn2, tz = rz - nz * vn2, tl = Math.hypot(tx, ty, tz);
+    if (tl > 1e-6) { const k = Math.min(tl, col.f * jn) / tl; rx -= tx * k; ry -= ty * k; rz -= tz * k; }
+    m.v.x = rx + cvx; m.v.y = ry + cvy; m.v.z = rz + cvz;
+    if (col.kick) { m.v.x += nx * col.kick; m.v.y += ny * col.kick; m.v.z += nz * col.kick; col.flash = 1; boing(); }
+    else if (vn < -3 && (col.mat === 'peg' || col.mat === 'tree')) tick();
+  }
+  function hitBox(m, b) {
+    const dx = m.p.x - b.c.x, dy = m.p.y - b.c.y, dz = m.p.z - b.c.z, a0 = b.ax[0], a1 = b.ax[1], a2 = b.ax[2], h = b.h;
+    const q0 = dx * a0.x + dy * a0.y + dz * a0.z, q1 = dx * a1.x + dy * a1.y + dz * a1.z, q2 = dx * a2.x + dy * a2.y + dz * a2.z;
+    const d0 = q0 - clamp(q0, -h[0], h[0]), d1 = q1 - clamp(q1, -h[1], h[1]), d2 = q2 - clamp(q2, -h[2], h[2]);
+    const dd = d0 * d0 + d1 * d1 + d2 * d2;
+    if (dd > MR * MR) return;
+    let nx, ny, nz, pen;
+    if (dd > 1e-12) {
+      const dist = Math.sqrt(dd);
+      nx = (d0 * a0.x + d1 * a1.x + d2 * a2.x) / dist; ny = (d0 * a0.y + d1 * a1.y + d2 * a2.y) / dist; nz = (d0 * a0.z + d1 * a1.z + d2 * a2.z) / dist;
+      pen = MR - dist;
     } else {
-      const { w, h } = b.dims;
-      const material = { gate: M.accent, lock: M.accent, spin: M.spin, ice: M.ice, cannon: M.cannon, dam: M.trunk }[b.kind] || M.wood;
-      m = new THREE.Mesh(new THREE.BoxGeometry(w, h, b.kind === 'arm' ? DEPTH * 0.8 : DEPTH), b.kind === 'trap' ? M.wood.clone() : material);
-      m.userData.trap = b.kind === 'trap';
-      if (['wood', 'ice', 'cannon'].includes(b.kind)) {
-        // Track rails: a wooden back rail and a glass front rail stand a little above the running surface
-        const rail = new THREE.BoxGeometry(w, h + 14, 3);
-        const back = new THREE.Mesh(rail, M.trunk), front = new THREE.Mesh(rail, M.glass);
-        back.position.z = -DEPTH / 2 + 1.5; front.position.z = DEPTH / 2 - 1.5;
-        m.add(back, front);
+      // Center inside the box: leave by the nearest face
+      const g0 = h[0] - Math.abs(q0), g1 = h[1] - Math.abs(q1), g2 = h[2] - Math.abs(q2);
+      let a = a0, q = q0, g = g0;
+      if (g1 < g) { a = a1; q = q1; g = g1; }
+      if (g2 < g) { a = a2; q = q2; g = g2; }
+      const sg = q < 0 ? -1 : 1;
+      nx = a.x * sg; ny = a.y * sg; nz = a.z * sg; pen = MR + g;
+    }
+    if (!b.kin) return resolve3(m, nx, ny, nz, pen, b);
+    // Moving paddle: the contact point moves at w·k × r
+    const rx = m.p.x - b.o.x, ry = m.p.y - b.o.y, rz = m.p.z - b.o.z, k = b.k, w = b.w;
+    resolve3(m, nx, ny, nz, pen, b, w * (k.y * rz - k.z * ry), w * (k.z * rx - k.x * rz), w * (k.x * ry - k.y * rx));
+  }
+  function hitCap(m, c) {
+    const abx = c.b.x - c.a.x, aby = c.b.y - c.a.y, abz = c.b.z - c.a.z;
+    const t = clamp(((m.p.x - c.a.x) * abx + (m.p.y - c.a.y) * aby + (m.p.z - c.a.z) * abz) / c.ll, 0, 1);
+    const dx = m.p.x - c.a.x - abx * t, dy = m.p.y - c.a.y - aby * t, dz = m.p.z - c.a.z - abz * t, dd = dx * dx + dy * dy + dz * dz, rr = MR + c.r;
+    if (dd > rr * rr || dd < 1e-12) return;
+    const dist = Math.sqrt(dd);
+    resolve3(m, dx / dist, dy / dist, dz / dist, rr - dist, c);
+  }
+  function hitRev(m, r) {
+    const dx = m.p.x - r.cx, dz = m.p.z - r.cz, rho = Math.hypot(dx, dz);
+    const ux = rho > 1e-6 ? dx / rho : 1, uz = rho > 1e-6 ? dz / rho : 0;
+    const ax = r.a[0], ay = r.a[1], ex = r.b[0] - ax, ey = r.b[1] - ay;
+    const t = clamp(((rho - ax) * ex + (m.p.y - ay) * ey) / (ex * ex + ey * ey), 0, 1);
+    const qx = rho - ax - ex * t, qy = m.p.y - ay - ey * t, dd = qx * qx + qy * qy, rr = MR + r.th / 2;
+    if (dd > rr * rr || dd < 1e-12) return;
+    const dist = Math.sqrt(dd);
+    resolve3(m, qx / dist * ux, qy / dist, qx / dist * uz, rr - dist, r);
+  }
+  const HIT = { box: hitBox, cap: hitCap, rev: hitRev };
+  let qid = 0;
+  const cand = [];
+  function physics3(dt) {
+    for (const c of E3.K) { c.th += c.w * dt; const d = vrot(c.base, c.k, c.th); c.ax = [d, c.k, vcross(d, c.k)]; }
+    const g = G3 * E3.gravity;
+    for (const m of marbles) {
+      if (m.isStatic) continue;
+      m.v.y -= g * dt;
+      const k = 1 - (m.slowUntil ? 3.5 : 0.1) * dt;
+      m.v.x *= k; m.v.y *= k; m.v.z *= k;
+      const sp = Math.hypot(m.v.x, m.v.y, m.v.z);
+      if (sp > V3MAX) { const s = V3MAX / sp; m.v.x *= s; m.v.y *= s; m.v.z *= s; }
+      m.p.x += m.v.x * dt; m.p.y += m.v.y * dt; m.p.z += m.v.z * dt;
+      m.gn = null;
+      qid++; cand.length = 0;
+      for (let i = Math.floor((m.p.x - MR) / CELL3); i <= Math.floor((m.p.x + MR) / CELL3); i++)
+        for (let j = Math.floor((m.p.y - MR) / CELL3); j <= Math.floor((m.p.y + MR) / CELL3); j++)
+          for (let kk = Math.floor((m.p.z - MR) / CELL3); kk <= Math.floor((m.p.z + MR) / CELL3); kk++) {
+            const cell = E3.grid.get(ckey(i, j, kk));
+            if (cell) for (const c of cell) if (c.q !== qid) { c.q = qid; cand.push(c); }
+          }
+      for (const c of cand) if (!c.removed) HIT[c.t](m, c);
+      for (const c of E3.K) { const dx = m.p.x - c.o.x, dy = m.p.y - c.o.y, dz = m.p.z - c.o.z; if (dx * dx + dy * dy + dz * dz < (c.rad + MR) ** 2) hitBox(m, c); }
+      for (const c of E3.X) hitBox(m, c);
+    }
+    // Marble against marble (equal masses; a frozen marble acts like a wall)
+    for (let i = 0; i < marbles.length; i++) {
+      const a = marbles[i];
+      for (let j = i + 1; j < marbles.length; j++) {
+        const b = marbles[j], dx = b.p.x - a.p.x, dy = b.p.y - a.p.y, dz = b.p.z - a.p.z, dd = dx * dx + dy * dy + dz * dz;
+        if (dd >= 4 * MR * MR || dd < 1e-12 || (a.isStatic && b.isStatic)) continue;
+        const d = Math.sqrt(dd), nx = dx / d, ny = dy / d, nz = dz / d, pen = 2 * MR - d;
+        const wa = a.isStatic ? 0 : b.isStatic ? 1 : 0.5, wb = 1 - wa;
+        a.p.x -= nx * pen * wa; a.p.y -= ny * pen * wa; a.p.z -= nz * pen * wa;
+        b.p.x += nx * pen * wb; b.p.y += ny * pen * wb; b.p.z += nz * pen * wb;
+        const vn = (b.v.x - a.v.x) * nx + (b.v.y - a.v.y) * ny + (b.v.z - a.v.z) * nz;
+        if (vn >= 0) continue;
+        const jj = -1.5 * vn;
+        a.v.x -= nx * jj * wa; a.v.y -= ny * jj * wa; a.v.z -= nz * jj * wa;
+        b.v.x += nx * jj * wb; b.v.y += ny * jj * wb; b.v.z += nz * jj * wb;
       }
     }
-    m.traverse(o => { o.castShadow = o.material !== D3.M.glass; o.receiveShadow = true; });
-    return m;
   }
 
-  function build3D() {
+  // Nearest free spawn point to a progress value, within optional bounds
+  function spawnNear(prog, o = {}) {
+    let best = null, bd = Infinity;
+    for (const s of E3.spawns) {
+      if ((o.min != null && s.prog < o.min) || (o.max != null && s.prog > o.max) || (o.needDir && !s.f)) continue;
+      const d = Math.abs(s.prog - prog);
+      if (d >= bd) continue;
+      if (marbles.some(m => (m.p.x - s.p.x) ** 2 + (m.p.y - s.p.y) ** 2 + (m.p.z - s.p.z) ** 2 < 1.3)) continue;
+      best = s; bd = d;
+    }
+    return best;
+  }
+  function place3(m, s) { m.p = V(s.p.x, s.p.y, s.p.z); m.v = V(); m.still = 0; m.kicks = 0; m.prog = s.prog; m.maxY = s.prog; m.position.y = s.prog; }
+
+  function buildWorld3(list) {
+    const order = shuffle(list.slice(0, MAXN));
+    course = buildCourse3(order.length);
+    const labs = labels(order), hue0 = rand() * 360;
+    marbles = order.map((s, i) => {
+      const h = Math.round((hue0 + i * 137.508) % 360), p = E3.slots[i];
+      return { kind: 'marble', h, student: s, name: labs[i], color: `hsl(${h} 74% 54%)`, dark: `hsl(${h} 70% 30%)`, light: `hsl(${h} 90% 82%)`,
+        p: V(p.x, p.y, p.z), v: V(), prog: -p.y * PROG, position: { x: W / 2, y: -p.y * PROG }, maxY: -p.y * PROG, still: 0, kicks: 0, done: false, isStatic: false };
+    });
+    world3 = true;
+    D3.built = null;
+    resetRace();
+  }
+
+  function simStep3() {
+    for (let s = 0; s < SUB; s++) physics3(DT3);
+    raceT += STEP;
+    for (const b of E3.bumps) if (b.flash) b.flash = Math.max(0, b.flash - 0.05);
+    for (const t of E3.tiles) {
+      t.warn = !t.removed && raceT > t.until - 650;
+      if (raceT < t.until) continue;
+      if (!t.removed) { t.removed = true; t.until = raceT + 700 + rand() * 500; continue; }
+      if (marbles.some(m => Math.abs(m.p.x - t.c.x) < 0.75 + MR && Math.abs(m.p.z - t.c.z) < 0.85 + MR && Math.abs(m.p.y - t.c.y) < 0.65)) { t.until = raceT + 100; continue; }
+      t.removed = false; t.until = raceT + 1300 + rand() * 2200;
+    }
+    let best = null;
+    for (const m of marbles) {
+      m.prog = -m.p.y * PROG; m.position.y = m.prog;
+      if (m.prog > m.maxY) m.maxY = m.prog;
+      // Off the course (flew off a track, or falling with nothing below): back on the track just behind its best point
+      const lost = m.p.y < E3.lo.y - 4 || m.p.x < E3.lo.x - 4 || m.p.x > E3.hi.x + 4 || m.p.z < E3.lo.z - 4 || m.p.z > E3.hi.z + 4;
+      if (!m.done && (lost || (m.v.y < -6 && !groundBelow(m.p)))) {
+        const s = spawnNear(m.maxY - 40, { max: m.maxY }) || spawnNear(m.maxY);
+        if (s) { place3(m, s); ev.fx.push({ k: 'ring3', p: { ...s.p }, t: now_() }); }
+      }
+      const sp = Math.hypot(m.v.x, m.v.y, m.v.z);
+      const waiting = !course.lock.removed && m.prog > course.lockTop - 20 && m.prog < course.lockY + 40;
+      if (state !== 'countdown' && !m.done && !waiting && !m.isStatic) {
+        m.still = sp < 0.3 ? m.still + 1 : 0;
+        if (m.still > 150) {
+          m.still = 0;
+          if (++m.kicks > 3) { const s = spawnNear(m.prog + 30, { min: m.prog + 5 }); if (s) place3(m, s); }
+          else { m.v.x += (rand() - 0.5) * 4; m.v.y += 3; m.v.z += (rand() - 0.5) * 4; }
+        }
+      }
+      if (sp > 1) m.kicks = 0;
+      if (!m.done && m.prog > course.finishY && onFinishStraight(m.p)) {
+        m.done = true; finishOrder.push(m);
+        if (finishOrder.length === 1) onWinner(m);
+        else updatePodium();
+      }
+      if (!m.done && (!best || m.prog > best.prog)) best = m;
+    }
+    leader = best;
+    if (state === 'running') {
+      if (!finishOrder.length && raceT > 150000 && best) { best.done = true; finishOrder.push(best); onWinner(best); }
+      updateLock();
+      updateEvents();
+      commentate();
+    }
+    if (state === 'done' && (raceT - finishAt > 25000 || finishOrder.length === marbles.length)) state = 'over';
+  }
+
+  // Is there any track within ~9 units under this point?
+  function groundBelow(p) {
+    const i = Math.floor(p.x / CELL3), j = Math.floor(p.y / CELL3), k = Math.floor(p.z / CELL3);
+    for (let d = 0; d < 4; d++) if (E3.grid.has(ckey(i, j - d, k))) return true;
+    return false;
+  }
+  function onFinishStraight(p) {
+    const fl = E3.finishLine, d = vsub(p, fl.p), along = vdot(d, fl.f);
+    return Math.abs(vdot(d, fl.s)) < fl.w / 2 + 1.5 && along > -1 && along < 8;
+  }
+
+  // Twists for the 3D run (same names and warnings as the flat run)
+  const EVENTS3 = {
+    foudre: { w: 1, run(live, z1) {
+      const m = live[0];
+      if (m.isStatic) return false;
+      const from = { ...m.p }, s = spawnNear(m.prog - 280, { min: z1, max: m.prog - 120 });
+      const pts = [];
+      for (let y = 10; y > 0; y -= 1.2) pts.push(V(from.x + (rand() - 0.5) * 1.6, from.y + y, from.z + (rand() - 0.5) * 1.6));
+      pts.push(from);
+      ev.fx.push({ k: 'bolt3', pts, t: now_() });
+      ev.flash = 1;
+      noise(0.9, 700, 0.35);
+      if (!s) {
+        m.isStatic = true; m.v = V(); m.frozenUntil = raceT + 1800;
+        banner('La foudre !', `${m.name} est sonné·e sur place`);
+        say(`La foudre frappe ${m.name}, qui reste sonné·e !`);
+        return true;
+      }
+      place3(m, s);
+      ev.fx.push({ k: 'ring3', p: { ...s.p }, t: now_() });
+      banner('La foudre !', `${m.name} est renvoyé·e en arrière`);
+      say(`La foudre frappe ${m.name} ! Retour en arrière !`);
+      return true;
+    } },
+    portage: { w: 1, run(live, z1, z2, pend) {
+      const lp = live[0].prog;
+      const cands = [pend?.m, ...backHalf(live).reverse()].filter(c => c && !c.done && !c.isStatic && live.includes(c) && c.prog < lp - 250);
+      for (const m of cands) {
+        const s = spawnNear(lp - 60, { min: Math.max(m.prog + 100, z1), max: Math.min(lp - 20, z2) });
+        if (!s) continue;
+        const from = { ...m.p };
+        place3(m, s);
+        ev.fx.push({ k: 'arc3', a: from, b: { ...s.p }, t: now_() }, { k: 'ring3', p: { ...s.p }, t: now_() });
+        banner('Portage !', `${m.name} saute en avant en canot`);
+        say(`Portage ! ${m.name} remonte jusqu’au peloton de tête !`);
+        tone(300, 0.4, 'sine', 0.08, 0, 1200);
+        return true;
+      }
+      return false;
+    } },
+    castor: { w: 0.7, run(live, z1, z2) {
+      if (ev.dam) return false;
+      const m = live[0], s = spawnNear(m.prog + 50, { min: m.prog + 25, max: Math.min(m.prog + 160, z2), needDir: true });
+      if (!s) return false;
+      const body = { t: 'box', c: vadd(s.p, s.n, 0.15), ax: [s.f, s.n, vnorm(vcross(s.f, s.n))], h: [0.18, 0.9, Math.min(s.w, 9) / 2 + 0.3], e: 0.2, f: 0.05, mat: 'trunk' };
+      E3.X.push(body);
+      ev.dam = { body, until: raceT + 3000 };
+      banner('Barrage de castor !', 'Le groupe de tête est bloqué');
+      say(`Un castor bloque ${m.name} ! Le peloton revient…`);
+      [0, 0.12, 0.24].forEach(w => tone(170, 0.06, 'square', 0.05, w));
+      return true;
+    } },
+    embacle: { w: 1, run(live) {
+      const m = live[0];
+      if (m.isStatic) return false;
+      m.isStatic = true; m.v = V(); m.frozenUntil = raceT + 2600;
+      banner('Embâcle !', `${m.name} est pris·e dans la glace`);
+      say(`Embâcle ! ${m.name} est gelé·e sur place, les autres la dépassent !`);
+      [0, 0.05, 0.1].forEach(w => tone(2400 - w * 6000, 0.08, 'triangle', 0.05, w));
+      return true;
+    } },
+    chasse: { w: 0.45, run(live, z1, z2) {
+      const m = live.at(-1), lp = live[0].prog;
+      if (m.isStatic || live.length < 4) return false;
+      const s = spawnNear(lp + 40, { min: lp + 10, max: Math.min(lp + 160, z2) }) || spawnNear(lp - 40, { min: Math.max(z1, lp - 160), max: lp - 10 });
+      if (!s) return false;
+      const from = { ...m.p };
+      place3(m, s);
+      ev.fx.push({ k: 'arc3', a: from, b: { ...s.p }, t: now_() }, { k: 'ring3', p: { ...s.p }, t: now_() });
+      banner('La chasse-galerie !', `${m.name}, dernier·ère, s’envole en canot volant`);
+      say(`La chasse-galerie ! ${m.name} passe de la dernière place à la tête !`);
+      [523, 659, 784].forEach((f, i) => tone(f, 0.2, 'sine', 0.07, i * 0.08));
+      return true;
+    } },
+    troc: { w: 0.8, run(live) {
+      const a = live[0], b = pickOne(backHalf(live));
+      if (!b || a.isStatic) return false;
+      const pa = { ...a.p }, pb = { ...b.p };
+      a.p = pb; b.p = pa; a.v = V(); b.v = V();
+      a.maxY = -pb.y * PROG; b.maxY = -pa.y * PROG;
+      ev.fx.push({ k: 'arc3', a: pa, b: pb, t: now_() }, { k: 'arc3', a: pb, b: pa, t: now_() });
+      banner('Troc de fourrures !', `${a.name} et ${b.name} échangent leurs places`);
+      say(`Troc ! ${b.name} prend la place de ${a.name} !`);
+      tone(660, 0.12, 'square', 0.05); tone(440, 0.12, 'square', 0.05, 0.12);
+      return true;
+    } },
+    neige: { w: 1, run(live) {
+      const top = live.slice(0, 3).filter(m => !m.isStatic);
+      if (!top.length) return false;
+      for (const m of top) m.slowUntil = raceT + 3000;
+      banner('Tempête de neige !', `Les ${top.length} premières billes avancent en raquettes`);
+      say(`Tempête de neige ! ${top.map(m => m.name).join(', ')} ralentissent !`);
+      noise(1.2, 2500, 0.08);
+      return true;
+    } },
+    envers: { w: 0.6, run() {
+      if (ev.gravUntil) return false;
+      E3.gravity = -0.35;
+      ev.gravUntil = raceT + 900;
+      banner('Le monde à l’envers !', 'La gravité s’inverse un instant');
+      say('Le monde à l’envers ! Tout le monde décolle !');
+      tone(200, 0.6, 'sine', 0.07, 0, 900);
+      return true;
+    } },
+  };
+
+  // ---------- 3D rendering ----------
+  function boxMatrix(b, m) {
+    const [a0, a1, a2] = b.ax, [h0, h1, h2] = b.h;
+    return m.set(a0.x * 2 * h0, a1.x * 2 * h1, a2.x * 2 * h2, b.c.x, a0.y * 2 * h0, a1.y * 2 * h1, a2.y * 2 * h2, b.c.y, a0.z * 2 * h0, a1.z * 2 * h1, a2.z * 2 * h2, b.c.z, 0, 0, 0, 1);
+  }
+  // A unit cylinder or cone (along Y) stretched from a to b with radius r
+  function capMatrix(a, b, r, m) {
+    const d = vsub(b, a), u = vnorm(Math.abs(d.y) < 0.9 * vlen(d) ? vcross(d, UP) : vcross(d, V(1, 0, 0))), w = vnorm(vcross(u, d)), c = vlerp(a, b, 0.5);
+    return m.set(u.x * r, d.x, w.x * r, c.x, u.y * r, d.y, w.y * r, c.y, u.z * r, d.z, w.z * r, c.z, 0, 0, 0, 1);
+  }
+  function textSprite(text, color, size) {
+    const k = 64, font = `400 ${k}px Bungee, "Arial Black", sans-serif`, probe = document.createElement('canvas').getContext('2d');
+    probe.font = font;
+    const w = Math.ceil(probe.measureText(text).width + k), h = Math.ceil(k * 1.5);
+    const map = canvasTex(w, h, x => { x.font = font; x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, w / 2, h / 2); });
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false }));
+    s.scale.set(size * w / h, size, 1);
+    return s;
+  }
+
+  function render3Build() {
     if (D3.group) { D3.scene.remove(D3.group); dispose(D3.group); }
     const g = D3.group = new THREE.Group();
     D3.scene.add(g);
     D3.scene.background = new THREE.Color(C.bg);
-    D3.meshes = new Map();
-    D3.anim = [];
-    D3.M = {
-      wood: mat(C.wood), trunk: mat(C['wood-edge']), peg: mat(C.peg, { metalness: 0.4, roughness: 0.35 }),
-      tree: mat(C.tree), spin: mat(C.spin), accent: mat(C.accent), white: mat(C.surface),
-      ice: mat(C.ice, { transparent: true, opacity: 0.8, roughness: 0.08 }),
-      glass: mat('#ffffff', { transparent: true, opacity: 0.22, roughness: 0.05, depthWrite: false }), cannon: mat(C.peg, { metalness: 0.7, roughness: 0.3 }),
+    D3.scene.fog = new THREE.Fog(C.bg, 45, 150);
+    const cam = D3.camera;
+    cam.near = 0.3; cam.far = 400; cam.updateProjectionMatrix();
+    Object.assign(D3.sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 90 });
+    D3.sun.shadow.camera.updateProjectionMatrix();
+    const glass = { transparent: true, opacity: 0.2, roughness: 0.05, depthWrite: false };
+    const M = D3.M = {
+      wood: mat(C.wood), accent: mat(C.accent), gate: mat(C.accent, { emissive: new THREE.Color(C.accent), emissiveIntensity: 0.25 }),
+      water: mat(C.water), moss: mat(C.tree), brick: mat(C.bump, { roughness: 0.85 }), spin: mat(C.spin), trunk: mat(C['wood-edge']),
+      peg: mat(C.peg, { metalness: 0.5, roughness: 0.3 }), tree: mat(C.tree), glass: mat('#ffffff', glass),
+      hopper: mat(C.accent, { transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
     };
-    const H = course.H;
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(W + 2000, H + 2400), mat(C.track, { roughness: 0.95 }));
-    wall.position.set(0, -H / 2 + 300, -DEPTH / 2 - 1);
-    wall.receiveShadow = true;
-    g.add(wall);
-    const band = mat(C['track-line'], { roughness: 0.95 });
-    course.sections.forEach((s, i) => {
-      const y1 = s.y - 12, y2 = course.sections[i + 1] ? course.sections[i + 1].y - 12 : course.finishY;
-      if (i % 2 === 0) {
-        const p = new THREE.Mesh(new THREE.PlaneGeometry(800, y2 - y1), band);
-        p.position.set(0, -(y1 + y2) / 2, -DEPTH / 2 - 0.5);
-        p.receiveShadow = true;
-        g.add(p);
-      }
-      g.add(wallText(s.title.toUpperCase(), s.y + 6, 22, C.muted));
-    });
-    g.add(wallText('DÉPART', 40, 30, C.muted));
-    const fy = course.finishY;
-    const strip = new THREE.Mesh(new THREE.PlaneGeometry(800, 16), new THREE.MeshBasicMaterial({ map: checker(800, 16, 8) }));
-    strip.position.set(0, -fy, -DEPTH / 2 + 0.4);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(800, DEPTH), new THREE.MeshBasicMaterial({ map: checker(800, DEPTH, 8), transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, -fy, 0);
-    g.add(strip, floor, wallText('ARRIVÉE', fy + 46, 30, C.ink, 0.9));
-    for (const d of course.deco) {
-      if (d.k === 'rim') {
-        const rim = new THREE.Mesh(new THREE.TorusGeometry(d.r, 4, 8, 72), D3.M.trunk);
-        rim.position.set(d.x - 450, -d.y, -DEPTH / 2 + 3);
-        g.add(rim);
-      } else {
-        const water = d.k === 'water';
-        const map = canvasTex(256, 256, (x) => {
-          x.strokeStyle = water ? C.water : C['track-line']; x.lineWidth = water ? 10 : 8;
-          for (let i = 0; i < 4; i++) {
-            x.beginPath();
-            if (water) { x.moveTo(i * 64 + 32, 0); x.lineTo(i * 64 + 32, 150); }
-            else for (let u = 0; u <= 256; u += 8) x.lineTo(u, i * 64 + 32 + Math.sin(u / 256 * Math.PI * 4) * 10);
-            x.stroke();
-          }
-        });
-        map.wrapS = map.wrapT = THREE.RepeatWrapping;
-        const w = water ? 70 : 800, h = d.y2 - d.y1;
-        map.repeat.set(w / 256 * (water ? 4 : 1), h / 256);
-        const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map, transparent: true, opacity: 0.7, depthWrite: false }));
-        p.position.set(0, -(d.y1 + d.y2) / 2, -DEPTH / 2 + 0.2);
-        g.add(p);
-        D3.anim.push({ map, dx: water ? 0 : 0.00006, dy: water ? 0.0012 : 0 });
+    const mtx = new THREE.Matrix4(), boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    // Fixed boxes are batched per material; boxes that move or vanish get their own mesh
+    const groups = {};
+    D3.dyn = [];
+    for (const c of E3.S) {
+      if (c.t === 'box' && !c.dyn) (groups[c.mat] ||= []).push(c);
+      if (c.t === 'box' && c.dyn) {
+        const mesh = new THREE.Mesh(boxGeo, c.trap ? M.wood.clone() : M[c.mat] || M.wood);
+        mesh.matrixAutoUpdate = false; mesh.matrix.copy(boxMatrix(c, mtx));
+        mesh.castShadow = mesh.receiveShadow = true;
+        g.add(mesh); D3.dyn.push([c, mesh]);
       }
     }
-    const geo = new THREE.SphereGeometry(R, 28, 18);
+    for (const [k, list] of Object.entries(groups)) {
+      const im = new THREE.InstancedMesh(boxGeo, M[k] || M.wood, list.length);
+      list.forEach((b, i) => im.setMatrixAt(i, boxMatrix(b, mtx)));
+      im.castShadow = k !== 'glass'; im.receiveShadow = true;
+      g.add(im);
+    }
+    const caps = E3.S.filter(c => c.t === 'cap' && c.mat !== 'bump');
+    const cyl = new THREE.CylinderGeometry(1, 1, 1, 14), cone = new THREE.ConeGeometry(1, 1, 10);
+    for (const k of ['peg', 'brick', 'tree']) {
+      const list = caps.filter(c => c.mat === k);
+      if (!list.length) continue;
+      const im = new THREE.InstancedMesh(cyl, k === 'tree' ? M.trunk : M[k], list.length);
+      list.forEach((c, i) => im.setMatrixAt(i, capMatrix(c.a, c.b, k === 'tree' ? 0.14 : c.r, mtx)));
+      im.castShadow = im.receiveShadow = true;
+      g.add(im);
+      if (k === 'tree') {
+        const crowns = new THREE.InstancedMesh(cone, M.tree, list.length);
+        list.forEach((c, i) => crowns.setMatrixAt(i, capMatrix(vlerp(c.a, c.b, 0.25), vlerp(c.a, c.b, 1.35), 0.6, mtx)));
+        crowns.castShadow = true;
+        g.add(crowns);
+      }
+    }
+    for (const b of E3.bumps) {
+      const mesh = new THREE.Mesh(cyl, mat(C.bump, { emissive: new THREE.Color(C.gold), emissiveIntensity: 0, roughness: 0.3 }));
+      mesh.matrixAutoUpdate = false; mesh.matrix.copy(capMatrix(b.a, b.b, b.r, mtx));
+      mesh.castShadow = true;
+      g.add(mesh); b.mesh = mesh;
+    }
+    for (const l of E3.lathes) {
+      const base = Math.min(...l.pts.map(p => p[1]));
+      const geo = new THREE.LatheGeometry(l.pts.map(([r, y]) => new THREE.Vector2(r, y - base)), 56);
+      const m = l.mat === 'hopper' ? M.hopper : (M[l.mat] || M.wood).clone();
+      m.side = THREE.DoubleSide;
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(l.cx, base, l.cz);
+      mesh.receiveShadow = true; mesh.castShadow = l.mat !== 'hopper';
+      g.add(mesh);
+    }
+    D3.kin = E3.K.map(c => { const mesh = new THREE.Mesh(boxGeo, M[c.mat]); mesh.matrixAutoUpdate = false; mesh.castShadow = true; g.add(mesh); return [c, mesh]; });
+    D3.extra = new Map();
+    for (const l of E3.signs) { const s = textSprite(l.text.toUpperCase(), C.muted, 0.9); s.position.set(l.p.x, l.p.y, l.p.z); g.add(s); }
+    // Finish arch with a checkered banner and line
+    const fl = E3.finishLine, checker = canvasTex(256, 32, (x, w, h) => { for (let i = 0; i < 16; i++) for (let j = 0; j < 2; j++) { x.fillStyle = (i + j) % 2 ? C.ink : C.surface; x.fillRect(i * 16, j * 16, 16, 16); } });
+    const flag = new THREE.MeshStandardMaterial({ map: checker, roughness: 0.6 });
+    const line = new THREE.Mesh(boxGeo, flag);
+    line.matrixAutoUpdate = false; line.matrix.copy(boxMatrix({ c: vadd(fl.p, fl.n, 0.01), ax: [fl.f, fl.n, fl.s], h: [0.35, 0.01, fl.w / 2] }, mtx));
+    g.add(line);
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(boxGeo, M.trunk);
+      post.matrixAutoUpdate = false; post.matrix.copy(boxMatrix({ c: vadd(vadd(fl.p, fl.s, side * (fl.w / 2 + 0.4)), UP, 1.4), ax: [fl.f, UP, fl.s], h: [0.15, 1.6, 0.15] }, mtx));
+      post.castShadow = true; g.add(post);
+    }
+    const banner3 = new THREE.Mesh(boxGeo, flag);
+    banner3.matrixAutoUpdate = false; banner3.matrix.copy(boxMatrix({ c: vadd(fl.p, UP, 3), ax: [fl.f, UP, fl.s], h: [0.1, 0.35, fl.w / 2 + 0.55] }, mtx));
+    g.add(banner3);
+    const finishText = textSprite('ARRIVÉE', C.ink, 0.8);
+    finishText.position.set(fl.p.x, fl.p.y + 3.9, fl.p.z);
+    g.add(finishText);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat(C.track, { roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.set(0, E3.bottom - 0.4, 0); ground.receiveShadow = true;
+    g.add(ground);
+    const sphere = new THREE.SphereGeometry(MR, 28, 18);
     for (const m of marbles) {
-      const map = canvasTex(128, 64, (x) => {
+      const map = canvasTex(128, 64, x => {
         x.fillStyle = `hsl(${m.h} 74% 50%)`; x.fillRect(0, 0, 128, 64);
         x.strokeStyle = `hsl(${m.h} 95% 82%)`; x.lineWidth = 6;
-        for (let i = 0; i < 3; i++) {
-          x.beginPath();
-          for (let u = 0; u <= 128; u += 4) x.lineTo(u, 32 + Math.sin(u / 128 * Math.PI * 2 * (i + 1) + i * 2) * (8 + i * 7));
-          x.stroke();
-        }
+        for (let i = 0; i < 3; i++) { x.beginPath(); for (let u = 0; u <= 128; u += 4) x.lineTo(u, 32 + Math.sin(u / 128 * Math.PI * 2 * (i + 1) + i * 2) * (8 + i * 7)); x.stroke(); }
       });
-      m.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map, roughness: 0.15, metalness: 0.1 }));
+      m.mesh = new THREE.Mesh(sphere, new THREE.MeshStandardMaterial({ map, roughness: 0.15, metalness: 0.1 }));
       m.mesh.castShadow = true;
       g.add(m.mesh);
     }
+    D3.F = null;
     D3.built = course;
   }
 
-  function sync3D() {
-    const seen = new Set();
-    for (const b of course.parts) {
-      let m = D3.meshes.get(b);
-      if (!m) { m = makeMesh(b); D3.meshes.set(b, m); D3.group.add(m); }
-      seen.add(b);
-      m.visible = !b.removed;
-      m.position.set(b.position.x - 450, -b.position.y, 0);
-      if (!b.circleRadius) m.rotation.z = -b.angle;
-      if (m.userData.glow) m.userData.glow.emissiveIntensity = b.flash * 1.4;
-      if (m.userData.trap) m.material.emissive.set(b.warn && Math.floor(performance.now() / 110) % 2 ? C.bump : '#000000');
+  const qtmp = { q: null, axis: null };
+  function sync3(dt) {
+    const mtx = new THREE.Matrix4(), blink = Math.floor(performance.now() / 110) % 2;
+    for (const [c, mesh] of D3.dyn) {
+      mesh.visible = !c.removed;
+      if (c.trap) mesh.material.emissive.set(c.warn && blink ? C.bump : '#000000');
     }
-    for (const [b, m] of D3.meshes) if (!seen.has(b)) { D3.group.remove(m); dispose(m); D3.meshes.delete(b); }
-    for (const m of marbles) { m.mesh.position.set(m.position.x - 450, -m.position.y, 0); m.mesh.rotation.z = -m.angle; }
-    for (const a of D3.anim) { a.map.offset.x += a.dx * 16; a.map.offset.y += a.dy * 16; }
+    for (const [c, mesh] of D3.kin) { mesh.matrix.copy(boxMatrix(c, mtx)); mesh.matrixWorldNeedsUpdate = true; }
+    for (const b of E3.bumps) b.mesh.material.emissiveIntensity = b.flash * 1.4;
+    for (const c of E3.X) if (!D3.extra.has(c)) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), D3.M.trunk);
+      mesh.matrixAutoUpdate = false; mesh.matrix.copy(boxMatrix(c, mtx)); mesh.castShadow = true;
+      D3.group.add(mesh); D3.extra.set(c, mesh);
+    }
+    for (const [c, mesh] of D3.extra) if (!E3.X.includes(c)) { D3.group.remove(mesh); mesh.geometry.dispose(); D3.extra.delete(c); }
+    qtmp.q ||= new THREE.Quaternion(); qtmp.axis ||= new THREE.Vector3();
+    for (const m of marbles) {
+      m.mesh.position.set(m.p.x, m.p.y, m.p.z);
+      // Roll: spin about (contact normal × velocity) at |v| / r
+      if (m.gn && !m.isStatic) {
+        const ax = vcross(m.gn, m.v), l = vlen(ax);
+        if (l > 1e-4) { qtmp.axis.set(ax.x / l, ax.y / l, ax.z / l); qtmp.q.setFromAxisAngle(qtmp.axis, l / MR * dt / 1000 * opts.speed); m.mesh.quaternion.premultiply(qtmp.q); }
+      }
+    }
   }
 
-  // Broadcast camera: the whole track width stays in frame at a fixed 3/4 angle. It follows the front of the
-  // pack on a damped spring (no sway, no zoom punches) and cuts to a photo-finish shot near the line.
-  function camera3D(dt, now, cw, ch) {
+  // Broadcast camera: a fixed 3/4 angle from the front, following the front of the pack on a damped spring,
+  // with a hard cut to a side-on photo-finish shot near the line
+  function camera3(dt, cw, ch) {
     const cam = D3.camera;
     cam.aspect = cw / ch;
     cam.updateProjectionMatrix();
-    const tanH = Math.tan(cam.fov * Math.PI / 360);
-    const d = clamp(500 / (tanH * cam.aspect), 600, 2400), visH = 2 * d * tanH;
-    let shot = 'race', fy = 260;
-    if (state === 'idle' || state === 'countdown') shot = 'start';
-    else {
-      const live = marbles.filter(m => !m.done).sort((a, b) => b.position.y - a.position.y);
-      if (live.length) {
-        const a = live[0].position.y, b = live[Math.min(2, live.length - 1)].position.y;
-        fy = clamp(a * 0.65 + b * 0.35 + visH * 0.12, a - visH * 0.3, a + visH * 0.3);
-      }
-      if (state !== 'running' || fy > course.finishY - visH * 0.35) shot = 'finish';
+    let F = E3.startFocus, shot = 'start';
+    if (state !== 'idle' && state !== 'countdown') {
+      const live = marbles.filter(m => !m.done).sort((a, b) => b.prog - a.prog);
+      shot = 'race';
+      if (live.length) F = vlerp(live[Math.min(2, live.length - 1)].p, live[0].p, 0.65);
+      if (state !== 'running' || !live.length || live[0].prog > course.finishY - 260) { shot = 'finish'; F = E3.finishFocus; }
     }
-    if (shot === 'start') fy = 260;
-    if (shot === 'finish') fy = course.finishY - visH * 0.1;
-    fy = clamp(fy, visH * 0.35, course.H - visH * 0.3);
     const cut = shot === 'finish' && D3.shot !== 'finish';
     D3.shot = shot;
-    if (D3.fy == null || cut || reduceMotion.matches) { D3.fy = fy; D3.fv = 0; }
+    if (!D3.F || cut || reduceMotion.matches) { D3.F = { ...F }; D3.FV = V(); }
     else {
-      const t = Math.min(dt, 50) / 1000, w = 2.4;
-      D3.fv = clamp(D3.fv + (w * w * (fy - D3.fy) - 2 * w * D3.fv) * t, -1600, 1600);
-      D3.fy += D3.fv * t;
+      const t = Math.min(dt, 50) / 1000, w = 2.6;
+      for (const q of ['x', 'y', 'z']) { D3.FV[q] = clamp(D3.FV[q] + (w * w * (F[q] - D3.F[q]) - 2 * w * D3.FV[q]) * t, -40, 40); D3.F[q] += D3.FV[q] * t; }
     }
-    const [side, lift, dist] = shot === 'finish' ? [-0.22, 0.05, 0.8] : [0.16, 0.2, 1];
-    cam.position.set(side * d, -D3.fy + lift * d, d * dist);
-    cam.lookAt(0, -D3.fy, 0);
-    D3.sun.position.set(260, -D3.fy + 480, 650);
-    D3.sun.target.position.set(0, -D3.fy, 0);
-    D3.tanH = tanH; D3.cw = cw; D3.ch = ch;
-    camY = D3.fy - visH / 2;
-    return visH;
+    const fit = clamp(1.5 / Math.min(cam.aspect, 1.5), 1, 2.6);
+    const off = vmul(shot === 'finish' ? E3.finishOff : V(5, 6.5, 14), fit);
+    cam.position.set(D3.F.x + off.x, D3.F.y + off.y, D3.F.z + off.z);
+    cam.lookAt(D3.F.x, D3.F.y - 0.4, D3.F.z);
+    D3.sun.position.set(D3.F.x + 12, D3.F.y + 30, D3.F.z + 16);
+    D3.sun.target.position.set(D3.F.x, D3.F.y, D3.F.z);
+    D3.tanH = Math.tan(cam.fov * Math.PI / 360); D3.cw = cw; D3.ch = ch;
+    camY = -D3.F.y * PROG - 150;
+    return 300;
   }
-
-  // World point → screen point, with s = screen pixels per world unit at that depth
-  function P(x, y, z = 0) {
-    const v = D3.tmp.set(x - 450, -y, z);
-    const dist = v.distanceTo(D3.camera.position);
+  function P3(p) {
+    const v = D3.tmp.set(p.x, p.y, p.z), dist = v.distanceTo(D3.camera.position);
     v.project(D3.camera);
-    return { x: (v.x + 1) / 2 * D3.cw, y: (1 - v.y) / 2 * D3.ch, s: D3.ch / (2 * D3.tanH * dist) };
+    return { x: (v.x + 1) / 2 * D3.cw, y: (1 - v.y) / 2 * D3.ch, s: D3.ch / (2 * D3.tanH * dist), back: v.z > 1 };
   }
-  const onScreen = p => p.x > -60 && p.x < cv.clientWidth + 60 && p.y > -40 && p.y < cv.clientHeight + 40;
 
-  // Names, crown, ice, snow and twist effects drawn flat over the 3D scene
-  function drawOverlay3D(now) {
-    drawCups(P);
-    drawTelegraph(P, now);
+  // Names, crown, ice, snow, warnings and twist effects drawn flat over the 3D scene
+  function overlay3(now) {
     if (!course.lock.removed && lk.firstAt) {
-      const p = P(450, course.lockY, DEPTH / 2);
+      const p = P3(E3.lockLabel);
       if (onScreen(p)) {
-        ctx.font = `700 ${clamp(12 * p.s, 10, 20)}px "Atkinson Hyperlegible", system-ui, sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = C.surface;
+        ctx.font = `400 ${clamp(0.5 * p.s, 12, 26)}px Bungee, "Arial Black", sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = C.accent;
         ctx.fillText(`ÉCLUSE  ${lk.arrived} / ${lk.need}`, p.x, p.y);
       }
     }
     for (const m of marbles) {
-      const { x, y } = m.position, p = P(x, y);
+      const p = P3(m.p);
       if (!onScreen(p)) continue;
       if (m.frozenUntil) {
-        const s = (R + 7) * p.s;
+        const s = (MR + 0.3) * p.s;
         ctx.beginPath(); ctx.roundRect(p.x - s, p.y - s, 2 * s, 2 * s, 5);
         ctx.globalAlpha = 0.55; ctx.fillStyle = C.ice; ctx.fill(); ctx.globalAlpha = 1;
         ctx.lineWidth = 2; ctx.strokeStyle = C.surface; ctx.stroke();
       }
       if (m.slowUntil) {
         ctx.fillStyle = C.surface;
-        for (let i = 0; i < 6; i++) { const a = now / 300 + i * 1.047; ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * (R + 9) * p.s, p.y + Math.sin(a) * (R + 9) * p.s, 2.8, 0, 7); ctx.fill(); }
+        for (let i = 0; i < 6; i++) { const a = now / 300 + i * 1.047; ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * (MR + 0.4) * p.s, p.y + Math.sin(a) * (MR + 0.4) * p.s, 3, 0, 7); ctx.fill(); }
       }
     }
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.lineJoin = 'round'; ctx.strokeStyle = C.track;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineJoin = 'round'; ctx.strokeStyle = C.surface;
     for (const m of marbles) {
-      const p = P(m.position.x, m.position.y + R + 2, R);
+      const p = P3(vadd(m.p, UP, MR + 0.15));
       if (!onScreen(p)) continue;
-      const f = clamp(13 * p.s, 9, 24);
+      const f = clamp(0.32 * p.s, 9, 18);
       ctx.font = `700 ${f}px "Atkinson Hyperlegible", system-ui, sans-serif`;
-      ctx.lineWidth = f / 3;
+      ctx.lineWidth = f / 3.5;
       ctx.strokeText(m.name, p.x, p.y);
       ctx.fillStyle = m === leader && state === 'running' ? C.accent : C.ink;
       ctx.fillText(m.name, p.x, p.y);
     }
     const crownFor = finishOrder[0] || (state === 'running' ? leader : null);
     if (crownFor) {
-      const p = P(crownFor.position.x, crownFor.position.y - R - 6, R), s = p.s;
-      ctx.fillStyle = C.gold;
-      ctx.beginPath();
-      [[-10, 0], [-10, -10], [-5, -5], [0, -13], [5, -5], [10, -10], [10, 0]].forEach(([dx, dy], i) => ctx[i ? 'lineTo' : 'moveTo'](p.x + dx * s, p.y + dy * s));
-      ctx.closePath(); ctx.fill();
+      const p = P3(vadd(crownFor.p, UP, MR + 0.15)), s = clamp(0.035 * p.s, 0.7, 1.6), y = p.y - clamp(0.32 * p.s, 9, 18) - 4;
+      if (onScreen(p)) {
+        ctx.fillStyle = C.gold; ctx.beginPath();
+        [[-10, 0], [-10, -10], [-5, -5], [0, -13], [5, -5], [10, -10], [10, 0]].forEach(([dx, dy], i) => ctx[i ? 'lineTo' : 'moveTo'](p.x + dx * s, y + dy * s));
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    const pend = ev.pending;
+    if (pend?.targets) {
+      const left = Math.max(0, (pend.at - raceT) / WARN_MS);
+      for (const m of pend.targets) {
+        const p = P3(m.p), r = (MR + 0.45 + left * 0.6) * p.s;
+        if (!onScreen(p)) continue;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(now / 400);
+        ctx.setLineDash([8, 6]); ctx.lineWidth = 3; ctx.strokeStyle = C.bump;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+        for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(r - 6, 0); ctx.lineTo(r + 9, 0); ctx.stroke(); }
+        ctx.restore();
+        if (pend.k === 'foudre') {
+          const c = P3(vadd(m.p, UP, 2.6)), k = c.s * 0.045;
+          ctx.fillStyle = C.muted; ctx.globalAlpha = 0.9;
+          for (const [dx, dy, rr] of [[-18, 4, 14], [0, -6, 18], [18, 4, 14], [0, 8, 14]]) { ctx.beginPath(); ctx.arc(c.x + dx * k, c.y + dy * k, rr * k, 0, 7); ctx.fill(); }
+          ctx.globalAlpha = 1;
+          if (rand() < 0.25) {
+            ctx.strokeStyle = C.gold; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(c.x, c.y + 18 * k);
+            for (let i = 1; i < 4; i++) ctx.lineTo(c.x + (rand() - 0.5) * 16 * k, c.y + (18 + i * 10) * k);
+            ctx.stroke();
+          }
+        }
+      }
     }
     ev.fx = ev.fx.filter(f => now - f.t < 900);
     for (const f of ev.fx) {
-      const a = 1 - (now - f.t) / 900;
+      const a = clamp(1 - (now - f.t) / 900, 0, 1);
       ctx.globalAlpha = a;
-      if (f.k === 'bolt') {
-        const pts = f.pts.map(q => P(q.x, q.y));
+      if (f.k === 'bolt3') {
+        const pts = f.pts.map(P3);
         for (const [w, c] of [[9, C.gold], [3, C.surface]]) {
           ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y));
           ctx.lineWidth = w; ctx.strokeStyle = c; ctx.stroke();
         }
-      } else if (f.k === 'ring') {
-        const p = P(f.x, f.y);
-        ctx.beginPath(); ctx.arc(p.x, p.y, (R + (1 - a) * 46) * p.s, 0, 7); ctx.lineWidth = 4; ctx.strokeStyle = C.gold; ctx.stroke();
-      } else if (f.k === 'arc') {
-        const p1 = P(f.x1, f.y1), p2 = P(f.x2, f.y2), pc = P((f.x1 + f.x2) / 2 + 160, (f.y1 + f.y2) / 2, 120);
+      } else if (f.k === 'ring3') {
+        const p = P3(f.p);
+        ctx.beginPath(); ctx.arc(p.x, p.y, (MR + (1 - a) * 1.6) * p.s, 0, 7); ctx.lineWidth = 4; ctx.strokeStyle = C.gold; ctx.stroke();
+      } else if (f.k === 'arc3') {
+        const p1 = P3(f.a), p2 = P3(f.b), pc = P3(vadd(vlerp(f.a, f.b, 0.5), UP, 4));
         ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.quadraticCurveTo(pc.x, pc.y, p2.x, p2.y);
         ctx.setLineDash([10, 10]); ctx.lineWidth = 4; ctx.strokeStyle = C.accent; ctx.stroke(); ctx.setLineDash([]);
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  function render3(dt, now, v) {
+    const size = `${v.cw}x${v.ch}@${dpr}`;
+    if (D3.size !== size) { D3.size = size; D3.r.setPixelRatio(Math.min(dpr, 1.5)); D3.r.setSize(v.cw, v.ch, false); }
+    if (D3.built !== course) render3Build();
+    sync3(dt);
+    camera3(dt, v.cw, v.ch);
+    D3.r.render(D3.scene, D3.camera);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, v.cw, v.ch);
+    overlay3(now);
+    drawMinimap({ ...v, viewH: 300 });
   }
 
   let last = performance.now(), acc = 0;
@@ -1798,32 +2376,23 @@ details .block { gap: 8px; }
     if (['countdown', 'running', 'finish', 'done'].includes(state)) {
       acc += dt * opts.speed * (state === 'finish' ? 0.3 : 1);
       acc = Math.min(acc, STEP * 10);
-      while (acc >= STEP) { simStep(); acc -= STEP; }
+      while (acc >= STEP) { world3 ? simStep3() : simStep(); acc -= STEP; }
     }
     const v = view();
-    const use3D = opts.view3d && D3.ready;
-    glc.hidden = !use3D;
-    if (use3D) {
-      const size = `${v.cw}x${v.ch}@${dpr}`;
-      if (D3.size !== size) { D3.size = size; D3.r.setPixelRatio(Math.min(dpr, 1.5)); D3.r.setSize(v.cw, v.ch, false); }
-      if (D3.built !== course) build3D();
-      sync3D();
-      const visH = camera3D(dt, now, v.cw, v.ch);
-      D3.r.render(D3.scene, D3.camera);
-      // A classroom computer that can't keep up drops back to 2D for this visit
+    glc.hidden = !world3;
+    if (world3) {
+      render3(dt, now, v);
+      // A classroom computer that can't keep up goes back to the flat run from the next race
       D3.perf ||= { t0: now, n: 0 };
       if (dt > 250 || document.hidden) D3.perf = { t0: now, n: 0 };
       else if (++D3.perf.n && now - D3.perf.t0 > 4000) {
-        if (D3.perf.n * 1000 / (now - D3.perf.t0) < 14 && !D3.slowOk) {
+        if (D3.perf.n * 1000 / (now - D3.perf.t0) < 14 && !D3.slowOk && opts.view3d) {
           opts.view3d = false; render3DButton();
-          say('Vue 2D activée : cet ordinateur est trop lent pour la 3D. Le bouton 3D la remet.');
+          say('Cet ordinateur est trop lent pour la 3D : la prochaine course sera en 2D. Le bouton 3D la remet.');
+          if (state === 'idle') preview();
         }
         D3.perf = { t0: now, n: 0 };
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, v.cw, v.ch);
-      drawOverlay3D(now);
-      drawMinimap({ ...v, viewH: visH });
       renderRank(now);
       drawFx(dt);
       requestAnimationFrame(frame);
@@ -1848,6 +2417,9 @@ details .block { gap: 8px; }
     drawFx(dt);
     requestAnimationFrame(frame);
   }
+
+  // Test hook: open the page with #debug to step the race from the console without rendering
+  if (location.hash === '#debug') window.__race = { E3, step: n => { for (let i = 0; i < n; i++) world3 ? simStep3() : simStep(); }, get marbles() { return marbles; }, get course() { return course; }, get state() { return state; }, get world3() { return world3; } };
 
   renderPanel();
   preview();

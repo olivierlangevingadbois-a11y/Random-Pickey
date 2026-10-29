@@ -16,7 +16,12 @@ Open `index.html` in a browser (no build step).
 
 Speed (1×/2×/3×), 3D, sound and fullscreen toggles sit at the top right of the track.
 
-**3D view** (on by default): the same race drawn in 3D with shadows, rolling striped marbles and railed tracks with a glass front. A broadcast-style camera keeps the whole track width in frame at a fixed angle, follows the front of the pack smoothly, and cuts to a photo-finish shot near the line. A race clock and ▲▼ position changes sit above the live standings. The **3D** button switches back to the flat view; if a computer renders under 14 frames per second, the page drops to 2D on its own for that visit. You can also paste a list (one name per line, `Nom, Prénom` or tab-separated) to create a group.
+**3D run** (on by default): a real 3D marble race in the style of *Marble Race*. Marbles are spheres rolling through railed channels, spirals, conical funnels and tilted boards, bumping into each other in 3D. Each race strings together the start plate, two random sections, the lock, three more random sections and the final straight, linked by funnels:
+- le Chemin du Roy (stacked switchback channels), la tour Martello (a banked spiral around a tower), le tourbillon du Saint-Laurent (a wide bowl marbles circle down), la forêt boréale (a steep board planted with pines), les moulins à vent (a board with turning paddles), les rapides du Long-Sault (a board of kicking bumpers) and les trappes de la citadelle (trapdoors that flash, then drop).
+- The same twists apply, announced 3 seconds ahead. A broadcast camera follows the front of the pack at a fixed angle and cuts to a side-on photo-finish shot. A race clock and ▲▼ position changes sit above the standings.
+- The **3D** button switches to the classic flat run (2D). If a computer renders under 14 frames per second, the next race runs in 2D.
+
+The physics is a small purpose-built engine (sphere against boxes, capsules and funnel shells, plus marble-to-marble hits); three.js r160 renders it. Open the page with `#debug` to get `window.__race`, which steps the race without rendering (used for flow tests).
 
 ## Privacy
 
@@ -24,4 +29,4 @@ Student lists stay in the browser's `localStorage`; nothing is uploaded. The `.g
 
 ## Tech
 
-Single HTML file. Physics with [Matter.js](https://brm.io/matter-js/) 0.19 (the 3D view renders that same 2D simulation with [three.js](https://threejs.org/) r160, loaded only when 3D is on); spreadsheets read with [SheetJS](https://sheetjs.com/) 0.18.5, loaded only when you import. Winners come from the physics simulation, seeded with randomized start positions (`crypto.getRandomValues`).
+Single HTML file. The 3D run uses its own physics and [three.js](https://threejs.org/) r160 (loaded only when 3D is on); the flat run uses [Matter.js](https://brm.io/matter-js/) 0.19; spreadsheets read with [SheetJS](https://sheetjs.com/) 0.18.5, loaded only when you import. Winners come from the physics simulation, seeded with randomized start positions (`crypto.getRandomValues`).

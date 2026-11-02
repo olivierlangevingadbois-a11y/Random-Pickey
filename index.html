@@ -113,6 +113,9 @@ details .block { gap: 8px; }
 .hud > * { pointer-events: auto; }
 .hud-tl { top: 12px; left: calc(12px + env(safe-area-inset-left, 0px)); }
 .hud-tr { top: 12px; right: 12px; }
+.hud-cam { top: 56px; right: 12px; flex-wrap: wrap; justify-content: flex-end; max-width: 60%; }
+.stage.free #track { touch-action: none; cursor: grab; }
+.stage.free.dragging #track { cursor: grabbing; }
 .hud-b {
   left: calc(12px + env(safe-area-inset-left, 0px)); right: 12px; bottom: 12px;
   align-items: center;
@@ -196,7 +199,7 @@ details .block { gap: 8px; }
   .app { height: auto; }
   main { grid-template-columns: 1fr; }
   .stage { height: 70svh; min-height: 420px; }
-  .hud-tr { right: calc(12px + env(safe-area-inset-right, 0px)); }
+  .hud-tr, .hud-cam { right: calc(12px + env(safe-area-inset-right, 0px)); }
   .hud-b { right: calc(12px + env(safe-area-inset-right, 0px)); }
   .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; padding-left: max(16px, env(safe-area-inset-left, 0px)); }
   .go { padding: 12px 16px; font-size: 15px; }
@@ -225,6 +228,12 @@ details .block { gap: 8px; }
         <button class="pill" id="view3d" type="button" aria-pressed="true" title="Vue en 3D">3D</button>
         <button class="pill" id="sound" type="button" aria-pressed="true" title="Effets sonores">Son</button>
         <button class="pill" id="fs" type="button" title="Plein écran">⛶</button>
+      </div>
+      <div class="hud hud-cam" id="camHud" hidden>
+        <button class="pill" id="freeCam" type="button" aria-pressed="false" title="Caméra libre : glisse sur la piste pour tourner autour">Caméra libre</button>
+        <button class="pill" id="zoomOut" type="button" title="Dézoomer (touche −)" aria-label="Dézoomer">−</button>
+        <button class="pill" id="zoomIn" type="button" title="Zoomer (touche +)" aria-label="Zoomer">+</button>
+        <button class="pill" id="camReset" type="button" title="Revenir à la caméra automatique">Recentrer</button>
       </div>
       <div class="countdown" id="countdown" hidden></div>
       <div class="banner" id="banner" hidden role="status"><strong></strong><span></span></div>
@@ -2232,6 +2241,7 @@ details .block { gap: 8px; }
       g.add(m.mesh);
     }
     D3.P = null;
+    cam3.pan = V(); cam3.cur = null;
     D3.built = course;
   }
 
@@ -2298,12 +2308,90 @@ details .block { gap: 8px; }
     }
     const r = railAt(D3.P);
     const dist = clamp(Math.max(r.h / (2 * tanH), r.w / (2 * tanH * cam.aspect)) * 0.95, 14, 45);
-    cam.position.set(r.p.x + CAM_DIR.x * dist, r.p.y + CAM_DIR.y * dist, r.p.z + CAM_DIR.z * dist);
-    cam.lookAt(r.p.x, r.p.y, r.p.z);
+    const o = orbit3(t), look = vadd(r.p, o.pan), d2 = dist * o.zoom;
+    D3.dist = d2;
+    cam.position.set(look.x + o.dir.x * d2, look.y + o.dir.y * d2, look.z + o.dir.z * d2);
+    cam.lookAt(look.x, look.y, look.z);
     D3.tanH = tanH; D3.cw = cw; D3.ch = ch;
     camY = D3.P - 150;
     return 300;
   }
+  // ---------- Free camera ----------
+  // The view still rides along with the race; the viewer chooses the angle (drag), shifts it (right-drag,
+  // Shift-drag or two fingers) and zooms (wheel, pinch, − / + buttons or keys). Recentrer goes back to auto.
+  const cam3 = { free: false, az: 0, el: 0, zoom: 1, pan: V(), cur: null, hinted: false };
+  const AZ0 = Math.atan2(CAM_DIR.x, CAM_DIR.z), EL0 = Math.asin(CAM_DIR.y);
+  // Ease the actual view toward the requested one so every input glides
+  function orbit3(t) {
+    const c0 = cam3.cur;
+    const want = cam3.free ? { az: cam3.az, el: cam3.el, pan: cam3.pan }
+      : { az: AZ0 + Math.round(((c0 ? c0.az : AZ0) - AZ0) / (2 * Math.PI)) * 2 * Math.PI, el: EL0, pan: V() };
+    if (!c0 || reduceMotion.matches) cam3.cur = { az: want.az, el: want.el, zoom: cam3.zoom, pan: { ...want.pan } };
+    const c = cam3.cur, k = 1 - Math.exp(-t / 0.15);
+    c.az += (want.az - c.az) * k; c.el += (want.el - c.el) * k; c.zoom += (cam3.zoom - c.zoom) * k; c.pan = vlerp(c.pan, want.pan, k);
+    return { dir: V(Math.cos(c.el) * Math.sin(c.az), Math.sin(c.el), Math.cos(c.el) * Math.cos(c.az)), zoom: c.zoom, pan: c.pan };
+  }
+  function setFree(on) {
+    if (on && !cam3.free) {
+      const c = cam3.cur;
+      cam3.az = c ? c.az : AZ0; cam3.el = c ? c.el : EL0; cam3.pan = c ? { ...c.pan } : V();
+      if (!cam3.hinted) { cam3.hinted = true; say('Caméra libre : glisse pour tourner, clic droit ou deux doigts pour déplacer, molette ou pincement pour zoomer.'); }
+    }
+    cam3.free = on;
+    $('#freeCam').setAttribute('aria-pressed', on);
+    $('#stage').classList.toggle('free', on);
+  }
+  const zoomBy = f => { cam3.zoom = clamp(cam3.zoom * f, 0.3, 3); };
+  $('#freeCam').onclick = () => setFree(!cam3.free);
+  $('#zoomIn').onclick = () => zoomBy(1 / 1.25);
+  $('#zoomOut').onclick = () => zoomBy(1.25);
+  $('#camReset').onclick = () => { setFree(false); cam3.zoom = 1; };
+  document.addEventListener('keydown', e => {
+    if (!world3 || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    if (e.key === '+' || e.key === '=') zoomBy(1 / 1.25);
+    else if (e.key === '-' || e.key === '_') zoomBy(1.25);
+  });
+  const ptrs = new Map();
+  let pinch = null;
+  function panBy(dx, dy) {
+    const c = cam3.cur || { az: AZ0, el: EL0 }, dir = V(Math.cos(c.el) * Math.sin(c.az), Math.sin(c.el), Math.cos(c.el) * Math.cos(c.az));
+    const right = vnorm(vcross(UP, dir)), up = vcross(dir, right), k = (D3.dist || 20) * 0.0018;
+    cam3.pan = vadd(vadd(cam3.pan, right, -dx * k), up, dy * k);
+  }
+  cv.addEventListener('pointerdown', e => {
+    if (!world3) return;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey });
+    cv.setPointerCapture(e.pointerId);
+    if (!cam3.free) setFree(true);
+    $('#stage').classList.add('dragging');
+  });
+  cv.addEventListener('pointermove', e => {
+    const p = ptrs.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size >= 2) {
+      // Two fingers: spread to zoom, move together to shift the view
+      const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (pinch) { zoomBy(pinch.d / Math.max(d, 1)); panBy(m.x - pinch.m.x, m.y - pinch.m.y); }
+      pinch = { d, m };
+    } else if (p.pan) panBy(dx, dy);
+    else { cam3.az -= dx * 0.006; cam3.el = clamp(cam3.el + dy * 0.005, -0.15, 1.45); }
+  });
+  const release = e => {
+    if (!ptrs.delete(e.pointerId)) return;
+    if (ptrs.size < 2) pinch = null;
+    if (!ptrs.size) $('#stage').classList.remove('dragging');
+  };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', release);
+  cv.addEventListener('contextmenu', e => { if (world3) e.preventDefault(); });
+  cv.addEventListener('wheel', e => {
+    if (!world3) return;
+    e.preventDefault();
+    zoomBy(Math.exp(e.deltaY * 0.0012));
+  }, { passive: false });
+
   function P3(p) {
     const v = D3.tmp.set(p.x, p.y, p.z), dist = v.distanceTo(D3.camera.position);
     v.project(D3.camera);
@@ -2431,6 +2519,7 @@ details .block { gap: 8px; }
     }
     const v = view();
     glc.hidden = !world3;
+    if ($('#camHud').hidden === world3) $('#camHud').hidden = !world3;
     if (world3) {
       render3(dt, now, v);
       // A classroom computer that can't keep up goes back to the flat run from the next race

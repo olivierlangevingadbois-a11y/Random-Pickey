@@ -1637,7 +1637,6 @@ details .block { gap: 8px; }
         const slots = [];
         for (let r = 0; r < rows; r++) for (let c = 0; c < 9; c++) slots.push(b.at(0.8 + r * 1.15, -4.6 + c * 1.15, MR + 0.02));
         E3.slots = shuffle(slots);
-        E3.startFocus = b.at(gateU / 2 + 1, 0);
         return b.exit;
       },
       // Stacked channels that switch back and forth, dropping from one to the next
@@ -1739,8 +1738,6 @@ details .block { gap: 8px; }
         const Fp = vlerp(S0, E, 11 / 16);
         E3.finishLine = { p: Fp, f: r.f, s: r.s, n: r.n, w: 2.6 };
         E3.finishY = -(Fp.y + MR) * PROG;
-        E3.finishFocus = vadd(Fp, UP, 0.5);
-        E3.finishOff = vadd(vmul(r.s.z > 0 ? r.s : vmul(r.s, -1), 9), V(-dir * 2, 3, 0));
         // A walled basin catches everyone after the line
         const Bc = vadd(E, V(dir * 3.5, -1.6, 0)), X = V(1, 0, 0), Z = V(0, 0, 1);
         box(Bc, [X, UP, Z], [4, 0.15, 3.5]);
@@ -1754,15 +1751,25 @@ details .block { gap: 8px; }
     const pool = shuffle(['chemin', 'tour', 'tourbillon', 'foret', 'moulins', 'rapides', 'trappes']);
     const plan = ['depart', ...pool.slice(0, 2), 'lock', ...pool.slice(2, 5), 'arrivee'];
     let O = V(0, 0, 0), dir = 1;
+    const rail = [];
     for (const k of plan) {
       cur = k;
+      const i0 = S.length, k0 = K.length;
       if (k !== 'depart') hopper(O);
       sections.push({ y: k === 'depart' ? -1e9 : -O.y * PROG - 20, ...MODULES3[k] });
       signs.push({ text: MODULES3[k].title, p: vadd(O, V(0, 3.4, -3.2)) });
       const exit = B[k](O, dir);
+      // One camera stop per section: the centre of everything it built, and how big it looks from the front
+      const bb = S.slice(i0).map(aabb3).concat(K.slice(k0).map(c => [c.o.x - c.rad, c.o.y - c.rad, c.o.z - c.rad, c.o.x + c.rad, c.o.y + c.rad, c.o.z + c.rad]));
+      const lo = [0, 1, 2].map(q => Math.min(...bb.map(b => b[q]))), hi = [3, 4, 5].map(q => Math.max(...bb.map(b => b[q])));
+      let c = V((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2);
+      // The start stop frames the marbles on the plate rather than the funnel under it
+      if (k === 'depart') c = vmul(E3.slots.slice(0, n).reduce((a, q) => vadd(a, q), V()), 1 / Math.max(1, n));
+      rail.push({ p: c, prog: -c.y * PROG, w: hi[0] - lo[0] + 5, h: hi[1] - lo[1] + 4 });
       O = V(exit.x, exit.y - 2.6, exit.z);
       dir = -dir;
     }
+    E3.rail = rail;
     spawns.sort((a, b) => a.prog - b.prog);
     Object.assign(E3, { S, K, X: [], spawns, tiles, bumps, lathes, signs, gravity: 1 });
     // Static colliders go in a coarse grid so each marble only tests what is near it
@@ -1914,7 +1921,7 @@ details .block { gap: 8px; }
     }
     return best;
   }
-  function place3(m, s) { m.p = V(s.p.x, s.p.y, s.p.z); m.v = V(); m.still = 0; m.kicks = 0; m.prog = s.prog; m.maxY = s.prog; m.position.y = s.prog; }
+  function place3(m, s) { m.p = V(s.p.x, s.p.y, s.p.z); m.pp = { ...m.p }; m.v = V(); m.still = 0; m.kicks = 0; m.prog = s.prog; m.maxY = s.prog; m.position.y = s.prog; }
 
   function buildWorld3(list) {
     const order = shuffle(list.slice(0, MAXN));
@@ -2069,7 +2076,7 @@ details .block { gap: 8px; }
       const a = live[0], b = pickOne(backHalf(live));
       if (!b || a.isStatic) return false;
       const pa = { ...a.p }, pb = { ...b.p };
-      a.p = pb; b.p = pa; a.v = V(); b.v = V();
+      a.p = pb; b.p = pa; a.pp = { ...pb }; b.pp = { ...pa }; a.v = V(); b.v = V();
       a.maxY = -pb.y * PROG; b.maxY = -pa.y * PROG;
       ev.fx.push({ k: 'arc3', a: pa, b: pb, t: now_() }, { k: 'arc3', a: pb, b: pa, t: now_() });
       banner('Troc de fourrures !', `${a.name} et ${b.name} échangent leurs places`);
@@ -2125,8 +2132,13 @@ details .block { gap: 8px; }
     D3.scene.fog = new THREE.Fog(C.bg, 45, 150);
     const cam = D3.camera;
     cam.near = 0.3; cam.far = 400; cam.updateProjectionMatrix();
-    Object.assign(D3.sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 90 });
+    // A fixed sun whose shadow covers the whole course: shadows never swim as the camera glides
+    const mid = vlerp(E3.lo, E3.hi, 0.5), span = vlen(vsub(E3.hi, E3.lo)) / 2 + 4, sunDir = vnorm(V(12, 30, 16));
+    D3.sun.position.set(mid.x + sunDir.x * (span + 20), mid.y + sunDir.y * (span + 20), mid.z + sunDir.z * (span + 20));
+    D3.sun.target.position.set(mid.x, mid.y, mid.z);
+    Object.assign(D3.sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: 2 * span + 40 });
     D3.sun.shadow.camera.updateProjectionMatrix();
+    if (D3.sun.shadow.mapSize.x !== 2048) { D3.sun.shadow.mapSize.set(2048, 2048); D3.sun.shadow.map?.dispose(); D3.sun.shadow.map = null; }
     const glass = { transparent: true, opacity: 0.2, roughness: 0.05, depthWrite: false };
     const M = D3.M = {
       wood: mat(C.wood), accent: mat(C.accent), gate: mat(C.accent, { emissive: new THREE.Color(C.accent), emissiveIntensity: 0.25 }),
@@ -2219,7 +2231,7 @@ details .block { gap: 8px; }
       m.mesh.castShadow = true;
       g.add(m.mesh);
     }
-    D3.F = null;
+    D3.P = null;
     D3.built = course;
   }
 
@@ -2240,7 +2252,9 @@ details .block { gap: 8px; }
     for (const [c, mesh] of D3.extra) if (!E3.X.includes(c)) { D3.group.remove(mesh); mesh.geometry.dispose(); D3.extra.delete(c); }
     qtmp.q ||= new THREE.Quaternion(); qtmp.axis ||= new THREE.Vector3();
     for (const m of marbles) {
-      m.mesh.position.set(m.p.x, m.p.y, m.p.z);
+      // Draw each marble between its last two physics steps, so motion is continuous at any frame rate
+      m.rp = m.pp ? vlerp(m.pp, m.p, alpha()) : m.p;
+      m.mesh.position.set(m.rp.x, m.rp.y, m.rp.z);
       // Roll: spin about (contact normal × velocity) at |v| / r
       if (m.gn && !m.isStatic) {
         const ax = vcross(m.gn, m.v), l = vlen(ax);
@@ -2249,48 +2263,45 @@ details .block { gap: 8px; }
     }
   }
 
-  // Broadcast camera: a fixed 3/4 angle from the front. It aims at the weighted middle of the top five (so a new
-  // leader or a teleport doesn't yank it), low-pass filters that aim, then follows it on a soft, speed-capped
-  // spring. Near the line it glides (no cut) to a side-on photo-finish view.
-  const CAM_W = [0.34, 0.24, 0.18, 0.13, 0.11];
+  // Broadcast camera on a rail. It never turns: it slides along a smooth curve through the middle of each
+  // section, at a distance that frames the whole section. One number drives it (how far down the front of
+  // the pack is), smoothed on a soft spring, so marbles zigzagging or circling inside a section don't move it.
+  const CAM_DIR = vnorm(V(0.33, 0.42, 1));
+  function railAt(P) {
+    const R = E3.rail, n = R.length;
+    if (P <= R[0].prog) return R[0];
+    if (P >= R[n - 1].prog) return R[n - 1];
+    let i = 0;
+    while (R[i + 1].prog < P) i++;
+    const u = (P - R[i].prog) / (R[i + 1].prog - R[i].prog), a = R[Math.max(0, i - 1)], b = R[i], c = R[i + 1], d = R[Math.min(n - 1, i + 2)];
+    // Catmull-Rom through the section centres: no corners, so the glide never jerks
+    const cr = (p0, p1, p2, p3) => 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (3 * p1 - p0 - 3 * p2 + p3) * u * u * u);
+    return { p: V(cr(a.p.x, b.p.x, c.p.x, d.p.x), cr(a.p.y, b.p.y, c.p.y, d.p.y), cr(a.p.z, b.p.z, c.p.z, d.p.z)), w: cr(a.w, b.w, c.w, d.w), h: cr(a.h, b.h, c.h, d.h) };
+  }
   function camera3(dt, cw, ch) {
     const cam = D3.camera, t = Math.min(dt, 60) / 1000;
     cam.aspect = cw / ch;
     cam.updateProjectionMatrix();
-    let aim = E3.startFocus, fin = 0;
+    const tanH = Math.tan(cam.fov * Math.PI / 360);
+    let target = E3.rail[0].prog;
     if (state !== 'idle' && state !== 'countdown') {
-      const live = marbles.filter(m => !m.done).sort((a, b) => b.prog - a.prog).slice(0, CAM_W.length);
-      if (live.length) {
-        let sw = 0;
-        aim = V();
-        // Aim slightly ahead along the pack's motion so the camera doesn't trail falling marbles
-        live.forEach((m, i) => { aim = vadd(vadd(aim, m.p, CAM_W[i]), m.v, CAM_W[i] * 0.3); sw += CAM_W[i]; });
-        aim = vmul(aim, 1 / sw);
-        // ...but never let the leader drift out of the middle of the frame
-        const keep = 0.28 * 2 * vlen(V(5, 6.5, 14)) * clamp(1.5 / Math.min(cam.aspect, 1.5), 1, 2.6) * Math.tan(cam.fov * Math.PI / 360);
-        const d = vsub(live[0].p, aim), L = vlen(d);
-        if (L > keep) aim = vadd(aim, d, 1 - keep / L);
-      }
-      fin = state !== 'running' || !live.length || live[0].prog > course.finishY - 320 ? 1 : 0;
+      const live = marbles.filter(m => !m.done).sort((a, b) => b.prog - a.prog), at = i => -live[Math.min(i, live.length - 1)].rp.y * PROG;
+      target = state === 'running' && live.length ? at(0) * 0.5 + at(1) * 0.3 + at(2) * 0.2 : E3.rail.at(-1).prog;
     }
-    if (!D3.F || reduceMotion.matches) { D3.A = { ...aim }; D3.F = { ...aim }; D3.FV = V(); D3.fin = fin; }
-    // 1) smooth the aim point, 2) spring the camera focus toward it, 3) ease between race and finish framing
-    const k = 1 - Math.exp(-t / 0.3);
-    D3.A = vlerp(D3.A, aim, k);
-    D3.fin += clamp(fin - D3.fin, -t * 0.7, t * 0.7);
-    const e = D3.fin * D3.fin * (3 - 2 * D3.fin), goal = vlerp(D3.A, E3.finishFocus, e), w = 2.2;
-    for (const q of ['x', 'y', 'z']) {
-      D3.FV[q] = clamp(D3.FV[q] + (w * w * (goal[q] - D3.F[q]) - 2 * w * D3.FV[q]) * t, -20, 20);
-      D3.F[q] += D3.FV[q] * t;
+    if (D3.P == null || reduceMotion.matches) { D3.T = D3.P = target; D3.PV = 0; }
+    else {
+      // Two stages: low-pass the target, then a soft critically damped spring toward it
+      D3.T += (target - D3.T) * (1 - Math.exp(-t / 0.4));
+      const w = 1.4;
+      D3.PV = clamp(D3.PV + (w * w * (D3.T - D3.P) - 2 * w * D3.PV) * t, -300, 300);
+      D3.P += D3.PV * t;
     }
-    const fit = clamp(1.5 / Math.min(cam.aspect, 1.5), 1, 2.6);
-    const off = vmul(vlerp(V(5, 6.5, 14), E3.finishOff, e), fit);
-    cam.position.set(D3.F.x + off.x, D3.F.y + off.y, D3.F.z + off.z);
-    cam.lookAt(D3.F.x, D3.F.y - 0.4, D3.F.z);
-    D3.sun.position.set(D3.F.x + 12, D3.F.y + 30, D3.F.z + 16);
-    D3.sun.target.position.set(D3.F.x, D3.F.y, D3.F.z);
-    D3.tanH = Math.tan(cam.fov * Math.PI / 360); D3.cw = cw; D3.ch = ch;
-    camY = -D3.F.y * PROG - 150;
+    const r = railAt(D3.P);
+    const dist = clamp(Math.max(r.h / (2 * tanH), r.w / (2 * tanH * cam.aspect)) * 0.95, 14, 45);
+    cam.position.set(r.p.x + CAM_DIR.x * dist, r.p.y + CAM_DIR.y * dist, r.p.z + CAM_DIR.z * dist);
+    cam.lookAt(r.p.x, r.p.y, r.p.z);
+    D3.tanH = tanH; D3.cw = cw; D3.ch = ch;
+    camY = D3.P - 150;
     return 300;
   }
   function P3(p) {
@@ -2310,7 +2321,7 @@ details .block { gap: 8px; }
       }
     }
     for (const m of marbles) {
-      const p = P3(m.p);
+      const p = P3(m.rp);
       if (!onScreen(p)) continue;
       if (m.frozenUntil) {
         const s = (MR + 0.3) * p.s;
@@ -2325,7 +2336,7 @@ details .block { gap: 8px; }
     }
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineJoin = 'round'; ctx.strokeStyle = C.surface;
     for (const m of marbles) {
-      const p = P3(vadd(m.p, UP, MR + 0.15));
+      const p = P3(vadd(m.rp, UP, MR + 0.15));
       if (!onScreen(p)) continue;
       const f = clamp(0.32 * p.s, 9, 18);
       ctx.font = `700 ${f}px "Atkinson Hyperlegible", system-ui, sans-serif`;
@@ -2336,7 +2347,7 @@ details .block { gap: 8px; }
     }
     const crownFor = finishOrder[0] || (state === 'running' ? leader : null);
     if (crownFor) {
-      const p = P3(vadd(crownFor.p, UP, MR + 0.15)), s = clamp(0.035 * p.s, 0.7, 1.6), y = p.y - clamp(0.32 * p.s, 9, 18) - 4;
+      const p = P3(vadd(crownFor.rp, UP, MR + 0.15)), s = clamp(0.035 * p.s, 0.7, 1.6), y = p.y - clamp(0.32 * p.s, 9, 18) - 4;
       if (onScreen(p)) {
         ctx.fillStyle = C.gold; ctx.beginPath();
         [[-10, 0], [-10, -10], [-5, -5], [0, -13], [5, -5], [10, -10], [10, 0]].forEach(([dx, dy], i) => ctx[i ? 'lineTo' : 'moveTo'](p.x + dx * s, y + dy * s));
@@ -2347,7 +2358,7 @@ details .block { gap: 8px; }
     if (pend?.targets) {
       const left = Math.max(0, (pend.at - raceT) / WARN_MS);
       for (const m of pend.targets) {
-        const p = P3(m.p), r = (MR + 0.45 + left * 0.6) * p.s;
+        const p = P3(m.rp), r = (MR + 0.45 + left * 0.6) * p.s;
         if (!onScreen(p)) continue;
         ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(now / 400);
         ctx.setLineDash([8, 6]); ctx.lineWidth = 3; ctx.strokeStyle = C.bump;
@@ -2355,7 +2366,7 @@ details .block { gap: 8px; }
         for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(r - 6, 0); ctx.lineTo(r + 9, 0); ctx.stroke(); }
         ctx.restore();
         if (pend.k === 'foudre') {
-          const c = P3(vadd(m.p, UP, 2.6)), k = c.s * 0.045;
+          const c = P3(vadd(m.rp, UP, 2.6)), k = c.s * 0.045;
           ctx.fillStyle = C.muted; ctx.globalAlpha = 0.9;
           for (const [dx, dy, rr] of [[-18, 4, 14], [0, -6, 18], [18, 4, 14], [0, 8, 14]]) { ctx.beginPath(); ctx.arc(c.x + dx * k, c.y + dy * k, rr * k, 0, 7); ctx.fill(); }
           ctx.globalAlpha = 1;
@@ -2403,13 +2414,20 @@ details .block { gap: 8px; }
   }
 
   let last = performance.now(), acc = 0;
+  // How far the clock is between the last physics step and the next one (0..1)
+  const alpha = () => clamp(acc / STEP, 0, 1);
   function frame(now) {
     const dt = Math.min(100, now - last);
     last = now;
     if (['countdown', 'running', 'finish', 'done'].includes(state)) {
       acc += dt * opts.speed * (state === 'finish' ? 0.3 : 1);
       acc = Math.min(acc, STEP * 10);
-      while (acc >= STEP) { world3 ? simStep3() : simStep(); acc -= STEP; }
+      while (acc >= STEP) {
+        // Remember where 3D marbles were before the step, so rendering can glide between steps
+        if (world3) for (const m of marbles) m.pp = { ...m.p };
+        world3 ? simStep3() : simStep();
+        acc -= STEP;
+      }
     }
     const v = view();
     glc.hidden = !world3;
